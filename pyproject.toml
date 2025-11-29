@@ -4,4 +4,12 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "anthropic>=0.75.0",
+    "asyncio>=4.0.0",
+    "dotenv>=0.9.9",
+    "fastapi>=0.122.0",
+    "pydantic>=2.12.5",
+    "pydantic-ai>=1.25.1",
+    "pydantic-ai-slim[anthropic]>=1.25.1",
+]

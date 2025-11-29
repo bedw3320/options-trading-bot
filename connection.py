@@ -6,18 +6,12 @@ from pydantic_ai.models.anthropic import AnthropicModel
 
 from schemas.output import Output
 
-# loading variables
-load_dotenv()
-
 # env variables
+load_dotenv()
 ANTHROPIC = os.environ.get("ANTHROPIC_API_KEY")
 
-# prompt
-MESSAGE = "Break down a beginner's guide to the x402 crypto protocol"
-
-
-# define model being used
 model = AnthropicModel("claude-3-5-haiku-20241022")
+
 
 agent = Agent(
     model,
@@ -26,9 +20,7 @@ agent = Agent(
 )
 
 
-def main():
-    response = agent.run_sync(MESSAGE)
-    print(response)
-
-
-main()
+class Client:
+    def create_message(self, message):
+        result = agent.run_sync(message)
+        return result.output

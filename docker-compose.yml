@@ -5,5 +5,5 @@ services:
     env_file:
       - .env
     volumes:
-      - ./state.json:/app/state.json
+      - ./state:/app/state
     restart: unless-stopped

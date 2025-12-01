@@ -7,7 +7,7 @@ A small, opinionated template for building an “agentic” crypto research + tr
 - **PydanticAI**: enforces structured outputs (e.g., buy/sell/hold + confidence) and tool calling
 - **State file**: minimal persistence so the “runner” can reconcile what happened after placing an order
 
-This is intentionally minimal - feel free to fork or suggest PRs to add to existing codebase. This is FREE to adapt.
+This is intentionally minimal - feel free to fork or suggest PRs to add to existing codebase. This acts more as an experiment to let the model 'think' for itself and reason what to do next whilst providing the necessary tools to act on it. 
 
 NOTE: To change the model use, navigate to core/agent.py where it will be listed below imports. It would be useful to
 make this more compatible with other models, this demo only uses anthropic,

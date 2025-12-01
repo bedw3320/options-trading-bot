@@ -1,34 +1,29 @@
 import os
 
 from dotenv import load_dotenv
-from pydantic_ai import Agent
-from pydantic_ai.models.anthropic import AnthropicModel
+from tavily import TavilyClient
 
-from schemas.output import Output
-
-# loading variables
-load_dotenv()
-
-# env variables
-ANTHROPIC = os.environ.get("ANTHROPIC_API_KEY")
-
-# prompt
-MESSAGE = "Break down a beginner's guide to the x402 crypto protocol"
-
-
-# define model being used
-model = AnthropicModel("claude-3-5-haiku-20241022")
-
-agent = Agent(
-    model,
-    instructions="Be concise and helpful.",
-    output_type=Output,
-)
+from core.runner import run_once
+from integrations.alpaca.config import load_config
+from schemas.deps import Deps
 
 
 def main():
-    response = agent.run_sync(MESSAGE)
-    print(response)
+    load_dotenv()
+
+    deps = Deps(
+        alpaca=load_config(),
+        tavily=TavilyClient(api_key=os.environ["TAVILY_API_KEY"]),
+        allow_trading=os.getenv("ALLOW_TRADING", "false").lower() == "true",
+    )
+
+    run_once(
+        deps,
+        prompt="Scan recent news for SOL and give buy/sell/hold with sources.",
+        conf_threshold=0.75,
+        poll_sleep_seconds=30,
+    )
 
 
-main()
+if __name__ == "__main__":
+    main()

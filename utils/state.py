@@ -2,24 +2,24 @@ from __future__ import annotations
 
 import json
 import os
-import time
 from typing import Any
-
-DEFAULT_STATE = {
-    "orders": {},
-    "positions": {},
-    "last_run_ts": 0,
-}
 
 
 def load_state(path: str = "state.json") -> dict[str, Any]:
     if not os.path.exists(path):
-        return dict(DEFAULT_STATE)
-    with open(path, "r") as f:
-        return json.load(f)
+        return {"orders": {}, "positions": {}, "meta": {}}
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        return {"orders": {}, "positions": {}, "meta": {}}
+    data.setdefault("orders", {})
+    data.setdefault("positions", {})
+    data.setdefault("meta", {})
+    return data
 
 
 def save_state(state: dict[str, Any], path: str = "state.json") -> None:
-    state["last_run_ts"] = int(time.time())
-    with open(path, "w") as f:
-        json.dump(state, f, indent=2, sort_keys=True)
+    tmp = f"{path}.tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)

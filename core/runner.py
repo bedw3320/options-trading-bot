@@ -31,6 +31,7 @@ def reconcile_order_and_positions(
     deps: Deps,
     state: dict[str, Any],
     order_id: str,
+    state_path: str,
 ) -> dict[str, Any]:
     order = alpaca_get_order(deps.alpaca, order_id=order_id).model_dump()
 
@@ -47,77 +48,87 @@ def reconcile_order_and_positions(
     }
 
     state["positions"] = snapshot_positions(deps)
-    save_state(state)
+    save_state(state, state_path)
     return order
+
+
+def build_prompt_with_state(base_prompt: str, state: dict[str, Any]) -> str:
+    positions = state.get("positions", {})
+    recent_orders = list((state.get("orders", {}) or {}).items())[-5:]
+    return f"""{base_prompt}
+        Portfolio snapshot (from state.json):\n{positions}
+        Recent orders (last 5):{recent_orders}
+        Return a decision with next_action + sleep_seconds.
+        Only propose trade if confidence >= 0.75."""
 
 
 def run_once(
     deps: Deps,
     *,
-    prompt: str,
+    base_prompt: str,
     conf_threshold: float = 0.75,
     poll_sleep_seconds: int = 30,
     state_path: str = "state.json",
-) -> None:
+) -> int:
     state = load_state(state_path)
 
-    # 1) ask agent
+    state["positions"] = snapshot_positions(deps)
+    state.setdefault("meta", {})
+    state["meta"]["last_cycle_ts"] = int(time.time())
+    save_state(state, state_path)
+
+    prompt = build_prompt_with_state(base_prompt, state)
+
     run = agent.run_sync(prompt, deps=deps)
-    out = run.output.model_dump()
+    out = run.output
 
-    confidence = float(out.get("confidence", 0.0))
-    order_intent = out.get("order") or {}
+    print(out.model_dump_json(indent=2))
 
-    print(run.output.model_dump_json(indent=2))
-
-    # 2) hard gates (deterministic)
     if not deps.allow_trading:
-        return
-    if confidence < conf_threshold:
-        print(f"Skipping trade: confidence {confidence} < {conf_threshold}")
-        return
+        return max(int(out.sleep_seconds), 15)
 
-    side = order_intent.get("side")
-    if side in (None, "hold"):
-        print("No trade to place (hold/none).")
-        return
+    if out.next_action != "trade":
+        return max(int(out.sleep_seconds), 15)
 
-    notional = order_intent.get("notional")
-    if notional is None:
-        print("Trade proposed but notional is missing -> skipping.")
-        return
+    if out.confidence < conf_threshold:
+        print(f"Skipping trade: confidence {out.confidence} < {conf_threshold}")
+        return max(int(out.sleep_seconds), 15)
 
-    # 3) place order
+    if not out.order or out.order.side in ("hold",):
+        print("Trade requested but order missing/hold -> skipping.")
+        return max(int(out.sleep_seconds), 15)
+
+    if out.order.notional is None or out.order.notional <= 0:
+        print("Trade requested but notional missing/invalid -> skipping.")
+        return max(int(out.sleep_seconds), 15)
+
     placed = alpaca_create_order(
         deps.alpaca,
-        symbol=order_intent["symbol"],
-        notional=float(notional),
-        side=side,  # buy/sell
-        time_in_force=order_intent.get("time_in_force", "ioc"),
+        symbol=out.order.symbol,
+        notional=float(out.order.notional),
+        side=out.order.side,
+        time_in_force=out.order.time_in_force,
         order_type="market",
     )
 
     order_id = placed.get("id")
     if not order_id:
         print("Order placed but no id returned:", placed)
-        return
+        return max(int(out.sleep_seconds), 15)
 
     state.setdefault("orders", {})
     state["orders"].setdefault(order_id, {})
     save_state(state, state_path)
 
-    # pause to wait for order to fill
     time.sleep(poll_sleep_seconds)
-    latest = reconcile_order_and_positions(deps, state, order_id)
+    latest = reconcile_order_and_positions(deps, state, order_id, state_path)
 
-    # letting agent know, order placed
-    follow_up = (
-        "We placed an order. Here is the latest order status and current positions.\n"
-        f"Order: {latest}\n"
-        f"Positions: {state.get('positions', {})}\n\n"
-        "What should we do next? (wait / adjust / close / do nothing). "
-        "If proposing a new trade, include order + confidence + sources."
-    )
-
+    follow_up = f"""We placed an order. Here is the latest order status and current positions.
+        Order: {latest}
+        Positions: {state.get("positions", {})}
+        Decide next_action + sleep_seconds.
+        If proposing another trade, include confidence + sources + order."""
     run2 = agent.run_sync(follow_up, deps=deps)
     print(run2.output.model_dump_json(indent=2))
+
+    return max(int(run2.output.sleep_seconds), 15)

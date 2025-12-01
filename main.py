@@ -1,4 +1,5 @@
 import os
+import time
 
 from dotenv import load_dotenv
 from tavily import TavilyClient
@@ -14,15 +15,28 @@ def main():
     deps = Deps(
         alpaca=load_config(),
         tavily=TavilyClient(api_key=os.environ["TAVILY_API_KEY"]),
-        allow_trading=os.getenv("ALLOW_TRADING", "false").lower() == "true",
+        # change if you want it to execute trades
+        allow_trading=False,
     )
 
-    run_once(
-        deps,
-        prompt="Scan recent news for SOL and give buy/sell/hold with sources.",
-        conf_threshold=0.75,
-        poll_sleep_seconds=30,
-    )
+    base_prompt = "Scan recent news for SOL and give buy/sell/hold with sources."
+
+    try:
+        while True:
+            try:
+                sleep_s = run_once(
+                    deps,
+                    base_prompt=base_prompt,
+                    conf_threshold=0.75,
+                    poll_sleep_seconds=30,
+                    state_path="state.json",
+                )
+            except Exception as e:
+                print("Loop error:", repr(e))
+                sleep_s = 30
+            time.sleep(sleep_s)
+    except KeyboardInterrupt:
+        print("Stopped.")
 
 
 if __name__ == "__main__":

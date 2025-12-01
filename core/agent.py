@@ -1,4 +1,5 @@
-import os
+from __future__ import annotations
+
 from typing import Any, Literal
 
 from pydantic_ai import Agent, RunContext
@@ -13,7 +14,8 @@ from integrations.tavily.search import web_search as tavily_web_search
 from schemas.deps import Deps
 from schemas.output import AgentResult
 
-model = AnthropicModel(os.getenv("ANTHROPIC_MODEL", "claude-3-5-haiku-latest"))
+# change your model here
+model = AnthropicModel("claude-3-5-haiku-latest")
 
 agent = Agent(
     model,
@@ -21,10 +23,13 @@ agent = Agent(
     output_type=AgentResult,
     instructions=(
         """You are a crypto research/trading assistant.
-        - Call tools to gather info.
-        - Include real URLs in `sources` when using 'web_search'.
-        - If you propose a trade, populate 'order'.
-        - Only call `create_order` if allow_trading=True."""
+        - Use tools when you need facts (news/price/context, account/positions).
+        - Always include real URLs in `sources` when you used `web_search`.
+        - Always output `confidence` in [0,1].
+        - Always set `next_action` and `sleep_seconds`.
+        - If you propose a trade, populate `order`.
+        - Only call `create_order` or `close_position` if allow_trading=True.
+        - If confidence < 0.75, prefer next_action='wait' or 'noop' (no trade)."""
     ),
     retries=3,
 )
@@ -37,7 +42,7 @@ def web_search(
     topic: Literal["general", "news", "finance"] = "news",
     days: int = 7,
     max_results: int = 5,
-) -> dict:
+) -> dict[str, Any]:
     return tavily_web_search(
         ctx.deps.tavily,
         query=query,
@@ -48,7 +53,7 @@ def web_search(
 
 
 @agent.tool
-def get_account(ctx: RunContext[Deps]) -> dict:
+def get_account(ctx: RunContext[Deps]) -> dict[str, Any]:
     acct = alpaca_get_account(ctx.deps.alpaca)
     return acct.model_dump()
 
@@ -59,13 +64,19 @@ def get_crypto_assets(ctx: RunContext[Deps]) -> list[dict[str, Any]]:
 
 
 @agent.tool
+def get_positions(ctx: RunContext[Deps]) -> dict[str, Any]:
+    positions = alpaca_list_positions(ctx.deps.alpaca)
+    return {"positions": [p.model_dump() for p in positions]}
+
+
+@agent.tool
 def create_order(
     ctx: RunContext[Deps],
     symbol: str,
     notional: float,
     side: Literal["buy", "sell"],
     time_in_force: Literal["gtc", "ioc"] = "ioc",
-) -> dict:
+) -> dict[str, Any]:
     if not ctx.deps.allow_trading:
         return {"ok": False, "reason": "Trading disabled (allow_trading=False)."}
 
@@ -78,12 +89,6 @@ def create_order(
         order_type="market",
     )
     return {"ok": True, "order": result}
-
-
-@agent.tool
-def get_positions(ctx: RunContext[Deps]) -> dict[str, Any]:
-    positions = alpaca_list_positions(ctx.deps.alpaca)
-    return {"positions": [p.model_dump() for p in positions]}
 
 
 @agent.tool

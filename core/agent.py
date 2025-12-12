@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from pydantic_ai import Agent, RunContext
-from pydantic_ai.models.anthropic import AnthropicModel
 
+from core.routing import build_model
 from integrations.alpaca.account import get_account as alpaca_get_account
 from integrations.alpaca.assets import list_crypto_assets as alpaca_list_crypto_assets
 from integrations.alpaca.orders import create_order as alpaca_create_order
@@ -14,8 +14,8 @@ from integrations.tavily.search import web_search as tavily_web_search
 from schemas.deps import Deps
 from schemas.output import AgentResult
 
-# change your model here
-model = AnthropicModel("claude-3-5-haiku-latest")
+# to change the model -- look for the global variable MODEL
+model = build_model(strict=True)
 
 agent = Agent(
     model,

@@ -52,11 +52,13 @@ uv run pytest tests/ -v
 
 **Multi-Asset Trading** — Stocks, options, and crypto through the Alpaca SDK (`alpaca-py`). Paper/live toggle via a single env var.
 
-**Data Pipeline** — Technical indicators (RSI, MACD, Bollinger Bands, 130+ via `pandas-ta`), news aggregation (Tavily + Alpaca News), social sentiment (Reddit + StockTwits), and options flow analysis.
+**Data Pipeline** — Technical indicators (RSI, MACD, Bollinger Bands, 130+ via `pandas-ta`), news aggregation (Tavily + Alpaca News), social sentiment (Reddit + StockTwits), and options flow analysis. All wired into the runner and injected into agent context automatically based on strategy `data_requirements`.
 
 **AI Agent** — PydanticAI agent with tools for market data, account management, order execution, and web search. Structured outputs with confidence scoring — won't trade unless it's confident enough.
 
-**State Management** — SQLite with WAL mode. Append-only event log of every decision, order, and reconciliation. Fully auditable.
+**Risk Controls** — Daily trade limits, per-position size caps, and total portfolio exposure limits enforced in code before any order is placed. Breaches are logged as `risk_blocked` events.
+
+**State Management** — SQLite with WAL mode. Append-only event log of every decision, order, risk block, and reconciliation. Fully auditable.
 
 **Claude Code Integration** — Custom commands for strategy design, review, and monitoring. Open the project in Claude Code and run `/project:strategy-interview` to design a strategy conversationally.
 
@@ -98,7 +100,10 @@ This bot defaults to doing nothing dangerous:
 - **Paper trading by default** — `TRADING_MODE=paper` unless you explicitly change it
 - **Trading disabled by default** — pass `--allow-trading` to enable order execution
 - **Confidence gating** — the agent won't trade below the strategy's confidence threshold (default 0.75)
-- **Everything is logged** — every agent decision and order goes to the SQLite event store
+- **Risk controls enforced in code** — daily trade limits, position sizing caps, and total exposure limits are checked before every order (not just in prompts)
+- **Market hours awareness** — strategies only run during their configured trading sessions
+- **Everything is logged** — every agent decision, order, and risk block goes to the SQLite event store
+- **Graceful error handling** — API failures are caught, logged, and the bot continues running
 - **Strategies are code** — YAML files in git, fully diffable and reviewable
 
 ## Claude Code Commands
@@ -130,10 +135,10 @@ If you use [Claude Code](https://docs.anthropic.com/en/docs/claude-code), this p
 main.py                          # Entry point
 core/
   agent.py                       # PydanticAI agent + all tools
-  runner.py                      # Strategy evaluation loop
+  runner.py                      # Strategy evaluation loop (market hours, data pipeline, risk controls)
   strategy_loader.py             # YAML -> validated StrategyConfig
   prompt_builder.py              # Strategy + market data -> agent prompt
-  market_hours.py                # Knows when markets are open
+  market_hours.py                # Market session awareness (regular, extended, 24/7)
 schemas/
   strategy.py                    # StrategyConfig Pydantic model
   output.py                      # AgentResult, OrderIntent

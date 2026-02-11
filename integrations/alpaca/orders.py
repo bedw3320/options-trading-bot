@@ -1,112 +1,127 @@
-import json
-from typing import Literal
+"""Order creation and management via alpaca-py SDK."""
 
-import httpx
+from __future__ import annotations
 
-from schemas.alpaca import AlpacaOrderResponse
+from typing import Any, Literal
+
+from alpaca.trading.client import TradingClient
+from alpaca.trading.enums import OrderSide, OrderType, TimeInForce, QueryOrderStatus
+from alpaca.trading.requests import (
+    GetOrdersRequest,
+    LimitOrderRequest,
+    MarketOrderRequest,
+    StopLimitOrderRequest,
+)
+
 from utils.logging import get_logger
-
-from .config import AlpacaConfig, auth_headers
 
 log = get_logger(__name__)
 
+_SIDE_MAP = {"buy": OrderSide.BUY, "sell": OrderSide.SELL}
+_TIF_MAP = {
+    "gtc": TimeInForce.GTC,
+    "ioc": TimeInForce.IOC,
+    "day": TimeInForce.DAY,
+    "opg": TimeInForce.OPG,
+}
+
+
+def _order_to_dict(order: Any) -> dict[str, Any]:
+    return {
+        "id": str(order.id),
+        "client_order_id": order.client_order_id,
+        "created_at": str(order.created_at) if order.created_at else None,
+        "updated_at": str(order.updated_at) if order.updated_at else None,
+        "filled_at": str(order.filled_at) if order.filled_at else None,
+        "symbol": order.symbol,
+        "side": str(order.side) if order.side else None,
+        "type": str(order.type) if order.type else None,
+        "time_in_force": str(order.time_in_force) if order.time_in_force else None,
+        "qty": str(order.qty) if order.qty else None,
+        "notional": str(order.notional) if order.notional else None,
+        "filled_qty": str(order.filled_qty) if order.filled_qty else None,
+        "filled_avg_price": str(order.filled_avg_price) if order.filled_avg_price else None,
+        "status": str(order.status) if order.status else None,
+    }
+
 
 def create_order(
-    cfg: AlpacaConfig,
+    client: TradingClient,
     *,
     symbol: str,
     notional: float,
     side: Literal["buy", "sell"],
     order_type: Literal["market", "limit", "stop_limit"] = "market",
-    time_in_force: Literal["gtc", "ioc"] = "ioc",
+    time_in_force: Literal["gtc", "ioc", "day"] = "ioc",
     limit_price: float | None = None,
     stop_price: float | None = None,
-) -> dict:
+) -> dict[str, Any]:
+    """Create an order via the SDK."""
     if notional <= 0:
         raise ValueError("notional must be > 0")
-    if order_type == "limit" and limit_price is None:
-        raise ValueError("limit_price is required for limit orders")
-    if order_type == "stop_limit" and (stop_price is None or limit_price is None):
-        raise ValueError(
-            "stop_price and limit_price are required for stop_limit orders"
+
+    sdk_side = _SIDE_MAP[side]
+    sdk_tif = _TIF_MAP[time_in_force]
+
+    log.info("Alpaca create_order: %s %s $%.2f %s", side, symbol, notional, order_type)
+
+    if order_type == "market":
+        req = MarketOrderRequest(
+            symbol=symbol,
+            notional=notional,
+            side=sdk_side,
+            time_in_force=sdk_tif,
         )
+    elif order_type == "limit":
+        if limit_price is None:
+            raise ValueError("limit_price is required for limit orders")
+        req = LimitOrderRequest(
+            symbol=symbol,
+            notional=notional,
+            side=sdk_side,
+            time_in_force=sdk_tif,
+            limit_price=limit_price,
+        )
+    elif order_type == "stop_limit":
+        if stop_price is None or limit_price is None:
+            raise ValueError("stop_price and limit_price required for stop_limit orders")
+        req = StopLimitOrderRequest(
+            symbol=symbol,
+            notional=notional,
+            side=sdk_side,
+            time_in_force=sdk_tif,
+            limit_price=limit_price,
+            stop_price=stop_price,
+        )
+    else:
+        raise ValueError(f"Unsupported order type: {order_type}")
 
-    payload: dict = {
-        "symbol": symbol,
-        "notional": notional,
-        "side": side,
-        "type": order_type,
-        "time_in_force": time_in_force,
-    }
-
-    if limit_price is not None:
-        payload["limit_price"] = limit_price
-    if stop_price is not None:
-        payload["stop_price"] = stop_price
-
-    url = f"{cfg.base_url}/orders"
-    log.info("Alpaca create_order: url=%s payload=%s", url, payload)
-
-    r = httpx.post(url, headers=auth_headers(cfg), json=payload, timeout=20.0)
-
-    log.info("Alpaca create_order: status=%s", r.status_code)
-    if r.is_error:
-        log.error("Alpaca create_order error body=%s", r.text)
-
-    r.raise_for_status()
-    data = r.json()
-
-    log.info(
-        "Alpaca create_order: id=%s status=%s filled_qty=%s symbol=%s side=%s notional=%s tif=%s",
-        data.get("id"),
-        data.get("status"),
-        data.get("filled_qty"),
-        data.get("symbol"),
-        data.get("side"),
-        data.get("notional"),
-        data.get("time_in_force"),
-    )
-
-    log.info(
-        "Alpaca create_order output=\n%s",
-        json.dumps(data, indent=2, ensure_ascii=False),
-    )
-
-    return data
+    order = client.submit_order(req)
+    result = _order_to_dict(order)
+    log.info("Alpaca create_order result: id=%s status=%s", result["id"], result["status"])
+    return result
 
 
-# get individual order
-def get_order(cfg: AlpacaConfig, *, order_id: str) -> AlpacaOrderResponse:
-    url = f"{cfg.base_url}/orders/{order_id}"
-    log.info("Alpaca get_order: url=%s", url)
-
-    r = httpx.get(url, headers=auth_headers(cfg), timeout=20.0)
-    log.info("Alpaca get_order: status=%s", r.status_code)
-
-    if r.is_error:
-        log.error("Alpaca get_order error body=%s", r.text)
-
-    r.raise_for_status()
-    return AlpacaOrderResponse.model_validate(r.json())
+def get_order(client: TradingClient, *, order_id: str) -> dict[str, Any]:
+    """Get a single order by ID."""
+    log.info("Alpaca get_order: %s", order_id)
+    order = client.get_order_by_id(order_id)
+    return _order_to_dict(order)
 
 
-# list all orders
 def list_orders(
-    cfg: AlpacaConfig,
+    client: TradingClient,
     *,
     status: Literal["open", "closed", "all"] = "open",
     limit: int = 50,
-) -> list[AlpacaOrderResponse]:
-    url = f"{cfg.base_url}/orders"
-    params = {"status": status, "limit": limit}
-    log.info("Alpaca list_orders: url=%s params=%s", url, params)
-
-    r = httpx.get(url, headers=auth_headers(cfg), params=params, timeout=20.0)
-    log.info("Alpaca list_orders: status=%s", r.status_code)
-
-    if r.is_error:
-        log.error("Alpaca list_orders error body=%s", r.text)
-
-    r.raise_for_status()
-    data = r.json()
-    return [AlpacaOrderResponse.model_validate(o) for o in data]
+) -> list[dict[str, Any]]:
+    """List orders with optional status filter."""
+    status_map = {
+        "open": QueryOrderStatus.OPEN,
+        "closed": QueryOrderStatus.CLOSED,
+        "all": QueryOrderStatus.ALL,
+    }
+    req = GetOrdersRequest(status=status_map[status], limit=limit)
+    log.info("Alpaca list_orders: status=%s limit=%s", status, limit)
+    orders = client.get_orders(req)
+    return [_order_to_dict(o) for o in orders]

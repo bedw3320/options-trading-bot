@@ -15,7 +15,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.test import TestModel
 
-# schemas deps
+# Mock schemas.deps - must use TradingClient-shaped mock
 mock_schemas_deps = MagicMock()
 
 
@@ -48,6 +48,8 @@ sys.modules["integrations.alpaca.account"] = MagicMock()
 sys.modules["integrations.alpaca.assets"] = MagicMock()
 sys.modules["integrations.alpaca.orders"] = MagicMock()
 sys.modules["integrations.alpaca.positions"] = MagicMock()
+sys.modules["integrations.alpaca.market_data"] = MagicMock()
+sys.modules["integrations.alpaca.options_data"] = MagicMock()
 sys.modules["integrations.tavily.search"] = MagicMock()
 
 # core.routing
@@ -74,7 +76,7 @@ def _tool_then_done(first: ModelResponse) -> Callable[..., object]:
 @pytest.fixture
 def mock_deps(mocker):
     mock_tavily_client = mocker.Mock(name="tavily_client")
-    mock_alpaca_client = mocker.Mock(name="alpaca_client")
+    mock_alpaca_client = mocker.Mock(name="alpaca_trading_client")
     return MockDeps(
         tavily=mock_tavily_client, alpaca=mock_alpaca_client, allow_trading=True
     )
@@ -111,16 +113,12 @@ def test_web_search_tool_happy_path(mocker, mock_deps):
 
 def test_get_account_formatting(mocker, mock_deps):
     mock_get_account = mocker.patch("core.agent.alpaca_get_account")
-
-    mock_account_obj = mocker.Mock()
-    mock_account_obj.model_dump.return_value = {"id": "123", "cash": "1000.00"}
-    mock_get_account.return_value = mock_account_obj
+    mock_get_account.return_value = {"id": "123", "cash": "1000.00"}
 
     agent.model = TestModel(call_tools=["get_account"])
     agent.run_sync("Check my account", deps=mock_deps)
 
     mock_get_account.assert_called_once_with(mock_deps.alpaca)
-    mock_account_obj.model_dump.assert_called_once()
 
 
 def test_create_order_happy_path(mocker, mock_deps):
@@ -191,7 +189,7 @@ def test_upstream_api_failure_handling(mocker, mock_deps):
 
 def test_close_position_logic(mocker, mock_deps):
     mock_close = mocker.patch("core.agent.alpaca_close_position")
-    mock_close.return_value.model_dump.return_value = {"status": "closed"}
+    mock_close.return_value = {"id": "order_456", "status": "closed", "symbol": "BTC"}
 
     agent.model = TestModel()
     agent.model.request = AsyncMock()

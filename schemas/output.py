@@ -9,7 +9,12 @@ class OrderIntent(BaseModel):
     symbol: str
     side: Literal["buy", "sell", "hold"]
     notional: float | None = Field(default=None, ge=0)
-    time_in_force: Literal["gtc", "ioc"] = "ioc"
+    time_in_force: Literal["gtc", "ioc", "day"] = "ioc"
+    # Options fields (optional - only used for option orders)
+    contract_symbol: str | None = Field(default=None, description="OCC option contract symbol")
+    option_type: Literal["call", "put"] | None = None
+    strike: float | None = Field(default=None, ge=0)
+    dte: int | None = Field(default=None, ge=0, description="Days to expiration")
 
 
 class AgentResult(BaseModel):

@@ -1,0 +1,89 @@
+# Strategy YAML Schema Reference
+# ================================
+# This file documents the strategy format. See schemas/strategy.py for the
+# Pydantic model that validates these files.
+#
+# Entry/exit conditions are DESCRIPTIVE STRINGS, not code.
+# The AI agent interprets them using pre-computed market data.
+
+name: "strategy-name"           # Required. Human-readable name.
+version: "1.0.0"                # Semver.
+description: "What this strategy does in plain English."
+
+asset_universe:
+  asset_classes:                 # Required. At least one of:
+    - equity                     #   equity, option, crypto
+    - option
+    - crypto
+  tickers:                       # Optional. Explicit ticker list.
+    - AAPL
+    - TSLA
+  filters:                       # Optional. Dynamic universe filters.
+    - "S&P 500 components with market cap > 10B"
+
+schedule:
+  frequency: "every 15 minutes"  # Required. Natural language frequency.
+  active_sessions:               # When to run.
+    - market_hours               #   market_hours, extended_hours, 24/7, pre_market, post_market
+  timezone: "US/Eastern"
+
+data_requirements:               # Required. At least one.
+  - source: ohlcv                # ohlcv, technicals, news, social, options_flow, web_search
+    params:
+      timeframe: "1D"
+      bars: 60
+  - source: technicals
+    params:
+      indicators:
+        - name: RSI
+          period: 14
+        - name: SMA
+          period: 20
+        - name: VWAP
+  - source: news
+    params:
+      keywords: ["earnings", "FDA approval"]
+      max_age_hours: 24
+  - source: social
+    params:
+      subreddits: ["wallstreetbets", "stocks"]
+      keywords: ["AAPL", "moon"]
+  - source: options_flow
+    params:
+      min_volume_ratio: 2.0
+  - source: web_search
+    params:
+      queries: ["AAPL stock news today"]
+
+entry:
+  conditions:                    # Required. At least one.
+    - description: "RSI(14) crosses above 30 from oversold territory"
+      priority: 8                # 1-10, 10 = must-have
+    - description: "Volume is at least 2x the 20-day average"
+      priority: 6
+    - description: "Positive sentiment in recent news"
+      priority: 4
+  min_conditions_met: 2          # How many conditions should be met.
+  position_type: long            # long, short, or both
+
+exit:
+  conditions:
+    - description: "RSI(14) crosses above 70 into overbought territory"
+      priority: 8
+    - description: "Price hits take-profit target"
+      priority: 10
+    - description: "Stop loss triggered"
+      priority: 10
+  min_conditions_met: 1
+
+risk:
+  max_position_pct: 5.0          # Max % of portfolio per position.
+  max_total_exposure_pct: 50.0   # Max total exposure.
+  stop_loss_pct: 5.0             # Stop loss % from entry.
+  take_profit_pct: 15.0          # Take profit % from entry.
+  max_daily_trades: 10
+  confidence_threshold: 0.75     # Agent must be this confident to trade.
+
+notes:
+  - "This is a reference schema showing all available fields."
+  - "Conditions are natural language - the AI agent interprets them."

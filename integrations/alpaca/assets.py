@@ -1,42 +1,54 @@
-import json
+"""Asset listing via alpaca-py SDK."""
 
-import httpx
+from __future__ import annotations
+
+from typing import Any
+
+from alpaca.trading.client import TradingClient
+from alpaca.trading.enums import AssetClass
+from alpaca.trading.requests import GetAssetsRequest
 
 from utils.logging import get_logger
 
-from .config import AlpacaConfig, auth_headers
-
 log = get_logger(__name__)
 
-_TIMEOUT = 20.0
+
+def list_assets(
+    client: TradingClient,
+    *,
+    asset_class: str = "us_equity",
+) -> list[dict[str, Any]]:
+    """List tradeable assets by class."""
+    class_map = {
+        "us_equity": AssetClass.US_EQUITY,
+        "crypto": AssetClass.CRYPTO,
+    }
+    cls = class_map.get(asset_class)
+    if cls is None:
+        raise ValueError(f"Unknown asset class: {asset_class}. Use: {list(class_map)}")
+
+    req = GetAssetsRequest(asset_class=cls)
+    log.info("Alpaca list_assets: class=%s", asset_class)
+    assets = client.get_all_assets(req)
+
+    result = [
+        {
+            "id": str(a.id),
+            "class": str(a.asset_class) if a.asset_class else None,
+            "exchange": str(a.exchange) if a.exchange else None,
+            "symbol": a.symbol,
+            "name": a.name,
+            "status": str(a.status) if a.status else None,
+            "tradable": a.tradable,
+            "fractionable": a.fractionable,
+        }
+        for a in assets
+        if a.tradable
+    ]
+    log.info("Alpaca list_assets: found %d tradeable", len(result))
+    return result
 
 
-def list_crypto_assets(cfg: AlpacaConfig) -> list[dict]:
-    url = f"{cfg.base_url}/assets"
-    params = {"asset_class": "crypto"}
-
-    log.info("Alpaca list_crypto_assets: url=%s params=%s", url, params)
-
-    r = httpx.get(url, headers=auth_headers(cfg), params=params, timeout=_TIMEOUT)
-
-    log.info("Alpaca list_crypto_assets: status=%s", r.status_code)
-    if r.is_error:
-        log.error("Alpaca list_crypto_assets error body=%s", r.text)
-
-    r.raise_for_status()
-    data = r.json()
-
-    if not isinstance(data, list):
-        log.error("Alpaca list_crypto_assets: unexpected response type=%s", type(data))
-        return []
-
-    sample = [a.get("symbol") for a in data[:5] if isinstance(a, dict)]
-    log.info("Alpaca list_crypto_assets: count=%s sample=%s", len(data), sample)
-
-    # Full, non-truncated output (pretty-printed)
-    log.info(
-        "Alpaca list_crypto_assets output=\n%s",
-        json.dumps(data, indent=2, ensure_ascii=False),
-    )
-
-    return data
+def list_crypto_assets(client: TradingClient) -> list[dict[str, Any]]:
+    """List tradeable crypto assets."""
+    return list_assets(client, asset_class="crypto")

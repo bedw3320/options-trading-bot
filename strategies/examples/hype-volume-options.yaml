@@ -1,0 +1,135 @@
+# Hype Volume Options Strategy
+# Detect social media hype -> unusual options volume -> ride momentum via options/equity
+
+name: hype-volume-options
+version: "1.0.0"
+description: >
+  Social media hype (Reddit, StockTwits, TikTok influencers) drives unusual
+  options volume on tickers. Detect the signal via social mention surges and
+  options flow analysis, then ride the momentum via options or equity positions.
+  This is a short-term momentum strategy targeting viral/hype-driven moves.
+
+asset_universe:
+  asset_classes:
+    - equity
+    - option
+  tickers: []  # Dynamic universe - discovered via social signals
+  filters:
+    - "US equities with options chains"
+    - "Market cap > $1B (avoid illiquid micro-caps)"
+    - "Average daily volume > 1M shares"
+
+schedule:
+  frequency: "every 15 minutes"
+  active_sessions:
+    - market_hours
+    - pre_market
+  timezone: "US/Eastern"
+
+data_requirements:
+  - source: social
+    params:
+      subreddits:
+        - wallstreetbets
+        - stocks
+        - options
+        - smallstreetbets
+      keywords:
+        - "calls"
+        - "puts"
+        - "moon"
+        - "squeeze"
+        - "YOLO"
+  - source: options_flow
+    params:
+      min_volume_ratio: 2.0
+  - source: ohlcv
+    params:
+      timeframe: "15Min"
+      bars: 48
+  - source: technicals
+    params:
+      indicators:
+        - name: RSI
+          period: 14
+        - name: VWAP
+        - name: VOLUME_RATIO
+          lookback: 20
+        - name: EMA
+          period: 9
+  - source: news
+    params:
+      keywords:
+        - "trending"
+        - "viral"
+        - "influencer"
+      max_age_hours: 12
+  - source: web_search
+    params:
+      queries:
+        - "{ticker} trending social media"
+        - "{ticker} unusual options activity"
+
+entry:
+  conditions:
+    - description: >
+        Social media mention surge detected: Reddit posts mentioning the ticker
+        have increased significantly in the last 24 hours compared to the
+        30-day average, with predominantly bullish sentiment.
+      priority: 8
+    - description: >
+        Unusual options volume: call option volume is at least 2x the
+        20-day average, indicating institutional or informed buying.
+      priority: 9
+    - description: >
+        Volume ratio is at least 1.5x the 20-day average on the equity,
+        confirming increased interest beyond just options.
+      priority: 6
+    - description: >
+        RSI(14) is between 40-70 (not already overbought, still has room to run).
+      priority: 5
+    - description: >
+        Price is above VWAP and EMA(9), indicating intraday momentum is bullish.
+      priority: 4
+  min_conditions_met: 3
+  position_type: long
+
+exit:
+  conditions:
+    - description: >
+        RSI(14) exceeds 80, indicating extreme overbought conditions.
+        The hype-driven move may be exhausting.
+      priority: 8
+    - description: >
+        Social media sentiment flips bearish or mention volume drops
+        significantly, suggesting the hype cycle is ending.
+      priority: 7
+    - description: >
+        Price drops below VWAP, indicating intraday momentum has reversed.
+      priority: 6
+    - description: "Stop loss of 8% from entry price triggered."
+      priority: 10
+    - description: "Take profit of 25% from entry achieved."
+      priority: 10
+    - description: >
+        For options positions: exit if DTE < 5 to avoid theta decay
+        acceleration, unless the position is deep in the money.
+      priority: 9
+  min_conditions_met: 1
+
+risk:
+  max_position_pct: 3.0
+  max_total_exposure_pct: 15.0
+  stop_loss_pct: 8.0
+  take_profit_pct: 25.0
+  max_daily_trades: 5
+  confidence_threshold: 0.80
+
+notes:
+  - "This strategy is higher risk - social hype can reverse quickly"
+  - "Prefer options for leveraged exposure with defined risk"
+  - "For equity positions, use tight stop losses"
+  - "TikTok has no reliable API - for v1, use Reddit/StockTwits as proxy"
+  - "Consider time-of-day: hype trades often peak in first 2 hours of trading"
+  - "Avoid illiquid options - check bid-ask spread before entering"
+  - "Paper trade extensively before going live with this strategy"

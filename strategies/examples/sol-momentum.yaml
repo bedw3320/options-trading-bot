@@ -1,0 +1,73 @@
+# SOL Momentum Strategy
+# Port of the original hardcoded SOL crypto trading bot.
+
+name: sol-momentum
+version: "1.0.0"
+description: >
+  Scan recent news for Solana (SOL) and make buy/sell/hold decisions
+  based on sentiment and momentum. This is a simple news-driven crypto
+  strategy that monitors SOL for trading opportunities.
+
+asset_universe:
+  asset_classes:
+    - crypto
+  tickers:
+    - SOL/USD
+
+schedule:
+  frequency: "every 5 minutes"
+  active_sessions:
+    - "24/7"
+  timezone: "US/Eastern"
+
+data_requirements:
+  - source: web_search
+    params:
+      queries:
+        - "Solana SOL crypto news today"
+        - "SOL price prediction"
+  - source: ohlcv
+    params:
+      timeframe: "1H"
+      bars: 48
+  - source: technicals
+    params:
+      indicators:
+        - name: RSI
+          period: 14
+        - name: SMA
+          period: 20
+
+entry:
+  conditions:
+    - description: "Recent news sentiment is bullish for SOL"
+      priority: 7
+    - description: "RSI(14) is not in overbought territory (< 70)"
+      priority: 5
+    - description: "Price is above SMA(20)"
+      priority: 4
+  min_conditions_met: 2
+  position_type: long
+
+exit:
+  conditions:
+    - description: "News sentiment turns bearish"
+      priority: 7
+    - description: "RSI(14) enters overbought territory (> 75)"
+      priority: 6
+    - description: "Stop loss of 5% triggered"
+      priority: 10
+  min_conditions_met: 1
+
+risk:
+  max_position_pct: 10.0
+  max_total_exposure_pct: 25.0
+  stop_loss_pct: 5.0
+  take_profit_pct: 15.0
+  max_daily_trades: 5
+  confidence_threshold: 0.75
+
+notes:
+  - "Ported from the original hardcoded SOL bot"
+  - "Crypto trades 24/7 - no market hours restriction"
+  - "Uses news sentiment as primary signal"

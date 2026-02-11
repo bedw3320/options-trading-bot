@@ -69,7 +69,7 @@ def search_reddit(
         return []
 
 
-def search_stocktwits(symbol: str, *, limit: int = 20) -> list[dict[str, Any]]:
+def search_stocktwits(symbol: str, *, limit: int = 20) -> dict[str, Any]:
     """Get recent StockTwits messages for a symbol.
 
     Uses the public API (no auth required, rate limited).

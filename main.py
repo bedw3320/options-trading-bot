@@ -2,6 +2,7 @@ import argparse
 import os
 import time
 
+from dotenv import load_dotenv
 from tavily import TavilyClient
 
 from core.agent import configure_model
@@ -38,6 +39,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main():
+    load_dotenv()
     args = parse_args()
 
     # load strategy

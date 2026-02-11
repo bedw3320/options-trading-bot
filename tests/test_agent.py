@@ -20,7 +20,7 @@ mock_schemas_deps = MagicMock()
 
 
 class MockDeps:
-    def __init__(self, tavily, alpaca, allow_trading=True):
+    def __init__(self, tavily, alpaca, allow_trading=False):
         self.tavily = tavily
         self.alpaca = alpaca
         self.allow_trading = allow_trading
@@ -29,15 +29,12 @@ class MockDeps:
 mock_schemas_deps.Deps = MockDeps
 sys.modules["schemas.deps"] = mock_schemas_deps
 
-# schemas output
+# schemas output — use real models so the agent can validate output
+from schemas.output import AgentResult, OrderIntent
+
 mock_schemas_output = MagicMock()
-
-
-class AgentResult(BaseModel):
-    message: str
-
-
 mock_schemas_output.AgentResult = AgentResult
+mock_schemas_output.OrderIntent = OrderIntent
 sys.modules["schemas.output"] = mock_schemas_output
 
 # integrations
@@ -61,6 +58,12 @@ sys.modules["core.routing"] = mock_routing
 from core.agent import agent
 
 
+_VALID_AGENT_JSON = (
+    '{"summary":"Done","rationale":["test"],"sources":[],'
+    '"confidence":0.5,"order":null,"next_action":"wait","sleep_seconds":60,"note":null}'
+)
+
+
 def _tool_then_done(first: ModelResponse) -> Callable[..., object]:
     calls = {"n": 0}
 
@@ -68,7 +71,7 @@ def _tool_then_done(first: ModelResponse) -> Callable[..., object]:
         calls["n"] += 1
         if calls["n"] == 1:
             return first
-        return ModelResponse(parts=[TextPart('{"message": "Done"}')])
+        return ModelResponse(parts=[TextPart(_VALID_AGENT_JSON)])
 
     return side_effect
 
@@ -78,7 +81,7 @@ def mock_deps(mocker):
     mock_tavily_client = mocker.Mock(name="tavily_client")
     mock_alpaca_client = mocker.Mock(name="alpaca_trading_client")
     return MockDeps(
-        tavily=mock_tavily_client, alpaca=mock_alpaca_client, allow_trading=True
+        tavily=mock_tavily_client, alpaca=mock_alpaca_client, allow_trading=False
     )
 
 
@@ -190,6 +193,7 @@ def test_upstream_api_failure_handling(mocker, mock_deps):
 def test_close_position_logic(mocker, mock_deps):
     mock_close = mocker.patch("core.agent.alpaca_close_position")
     mock_close.return_value = {"id": "order_456", "status": "closed", "symbol": "BTC"}
+    mock_deps.allow_trading = True
 
     agent.model = TestModel()
     agent.model.request = AsyncMock()

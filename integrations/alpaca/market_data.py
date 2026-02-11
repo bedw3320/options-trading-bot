@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pandas as pd
@@ -71,7 +71,7 @@ def get_stock_bars(
     if tf is None:
         raise ValueError(f"Unknown timeframe: {timeframe}. Use: {list(_TIMEFRAME_MAP)}")
 
-    end = datetime.now()
+    end = datetime.now(timezone.utc)
     start = end - timedelta(days=bars * 2)  # overshoot to account for non-trading days
 
     client = _get_stock_client()
@@ -97,7 +97,7 @@ def get_crypto_bars(
     if tf is None:
         raise ValueError(f"Unknown timeframe: {timeframe}. Use: {list(_TIMEFRAME_MAP)}")
 
-    end = datetime.now()
+    end = datetime.now(timezone.utc)
     start = end - timedelta(days=bars * 2)
 
     client = _get_crypto_client()

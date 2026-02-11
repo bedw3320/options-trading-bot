@@ -59,6 +59,9 @@ Reference docs for specialized tasks (in `.claude/skills/`):
 | Strategy Author | `.claude/skills/strategy-author.md` | Writes/updates strategy YAML with schema awareness |
 | Market Research | `.claude/skills/market-research.md` | Research tickers using available data sources |
 | Risk Audit | `.claude/skills/risk-audit.md` | Analyze portfolio risk, flag breaches |
+| Social Sentiment (Exa) | `.claude/skills/exa-social-sentiment.md` | X/Twitter sentiment for hype detection, ticker buzz, retail sentiment |
+| Financial Reports (Exa) | `.claude/skills/exa-financial-reports.md` | SEC filings, earnings reports, fundamental analysis |
+| Company Research (Exa) | `.claude/skills/exa-company-research.md` | Ticker due diligence, news catalysts, competitive analysis |
 
 ## Rules
 
@@ -87,7 +90,7 @@ The PydanticAI agent has tools for: web search, account info, positions, orders,
 
 ```bash
 uv sync                          # Install dependencies
-uv run pytest tests/ -v          # Run all 45 tests
+uv run pytest tests/ -v          # Run tests
 uv run python -c "from core.strategy_loader import load; print(load('strategies/examples/sol-momentum.yaml').name)"
 
 # Run with a strategy (paper mode, trading disabled by default)

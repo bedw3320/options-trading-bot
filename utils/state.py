@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -109,3 +110,19 @@ def append_event(
             """,
             (state_key, now, event_type, payload_json),
         )
+
+
+def count_daily_trades(db_path: str, state_key: str) -> int:
+    """Count orders placed today (UTC) for a given state key."""
+    ensure_tables(db_path)
+    midnight = int(
+        datetime.now(timezone.utc)
+        .replace(hour=0, minute=0, second=0, microsecond=0)
+        .timestamp()
+    )
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM agent_events WHERE state_key = ? AND event_type = 'order_placed' AND ts >= ?",
+            (state_key, midnight),
+        ).fetchone()
+    return row[0] if row else 0

@@ -14,7 +14,7 @@ def load(path: str | Path) -> StrategyConfig:
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Strategy file not found: {path}")
-    if not path.suffix in (".yaml", ".yml"):
+    if path.suffix not in (".yaml", ".yml"):
         raise ValueError(f"Strategy file must be .yaml or .yml: {path}")
 
     with open(path) as f:

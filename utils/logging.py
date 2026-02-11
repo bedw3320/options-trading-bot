@@ -1,11 +1,12 @@
 import logging
+import os
 
 
 def get_logger(name: str) -> logging.Logger:
     logger = logging.getLogger(name)
 
-    # change to see or not see all
-    logger.setLevel(logging.ERROR)
+    level = os.environ.get("LOG_LEVEL", "INFO").upper()
+    logger.setLevel(getattr(logging, level, logging.INFO))
     logger.propagate = False
 
     if not logger.handlers:

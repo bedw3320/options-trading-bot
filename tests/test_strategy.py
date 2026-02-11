@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from pydantic import ValidationError
 
 from core.prompt_builder import build_strategy_prompt
 from core.strategy_loader import load, load_all
@@ -59,7 +60,7 @@ def test_strategy_config_defaults():
 
 def test_strategy_config_validation_error():
     bad = {**MINIMAL_STRATEGY, "asset_universe": {"asset_classes": []}}
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         StrategyConfig.model_validate(bad)
 
 

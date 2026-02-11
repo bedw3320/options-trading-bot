@@ -30,7 +30,7 @@ def is_market_open() -> bool:
     now = _now_et()
     if now.weekday() >= 5:  # Saturday=5, Sunday=6
         return False
-    return MARKET_OPEN <= now.time() <= MARKET_CLOSE
+    return MARKET_OPEN <= now.time() < MARKET_CLOSE
 
 
 def is_extended_hours() -> bool:

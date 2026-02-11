@@ -1,5 +1,5 @@
 [project]
-name = "swing-trader"
+name = "alpaca-trading-bot"
 version = "0.2.0"
 description = "Multi-asset swing trading platform powered by PydanticAI"
 readme = "README.md"
@@ -7,19 +7,22 @@ requires-python = ">=3.12"
 dependencies = [
     "anthropic>=0.75.0",
     "alpaca-py>=0.35.1",
-    "fastapi>=0.122.0",
+    "httpx>=0.27.0",
     "pandas>=2.2.0",
     "pandas-ta>=0.3.14b1",
     "praw>=7.8.1",
     "pydantic>=2.12.5",
     "pydantic-ai>=1.25.1",
-    "pydantic-ai-slim[anthropic]>=1.25.1",
-    "pytest>=9.0.2",
-    "pytest-mock>=3.15.1",
+    "pytz>=2025.2",
     "python-dotenv>=1.2.1",
     "pyyaml>=6.0.2",
     "tavily>=1.1.0",
-    "pytz>=2025.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-mock>=3.15.1",
 ]
 
 [tool.pytest.ini_options]

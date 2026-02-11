@@ -3,7 +3,7 @@ You are a trading dashboard for the Swing Trader platform. Read the current stat
 ## What to check
 
 1. **Active strategies**: List YAML files in `strategies/active/`
-2. **State database**: Read from `state/state.db` using `utils.state.load_state()`
+2. **State database**: Read from `state/state.db` using `utils.state.load_state(db_path, state_key)`
 3. **Current positions**: Show open positions with P&L
 4. **Recent orders**: Show last 5 orders with status
 5. **Market session**: Show current market status (open/closed/extended)

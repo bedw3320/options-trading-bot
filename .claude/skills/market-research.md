@@ -1,6 +1,6 @@
 ## Market Research Skill
 
-You can research tickers, sectors, and market conditions using the data sources available in the Swing Trader platform.
+You can research tickers, sectors, and market conditions using the data sources available in the Options Trading Bot platform.
 
 ### Available Data Sources
 

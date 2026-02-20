@@ -1,6 +1,6 @@
 ## Project Context
 
-This is **Swing Trader**, a multi-asset swing trading platform (stocks, options, crypto) powered by PydanticAI and Alpaca.
+This is **Options Trading Bot**, a multi-asset swing trading platform (stocks, options, crypto) powered by PydanticAI and Alpaca.
 
 ### Architecture
 - **Strategies**: YAML files validated by Pydantic models. Conditions are descriptive strings, not code.

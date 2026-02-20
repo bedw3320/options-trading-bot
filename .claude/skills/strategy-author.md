@@ -1,6 +1,6 @@
 ## Strategy Author Skill
 
-You are an expert at writing and updating strategy YAML files for the Swing Trader platform.
+You are an expert at writing and updating strategy YAML files for the Options Trading Bot platform.
 
 ### Schema Awareness
 Strategy files are validated by `schemas/strategy.py::StrategyConfig`. Key sections:

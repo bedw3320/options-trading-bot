@@ -1,4 +1,4 @@
-# Swing Trader
+# Options Trading Bot
 
 Multi-asset swing trading platform (stocks, options, crypto) powered by PydanticAI + Alpaca.
 

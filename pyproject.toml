@@ -1,5 +1,5 @@
 [project]
-name = "alpaca-trading-bot"
+name = "options-trading-bot"
 version = "0.2.0"
 description = "Multi-asset swing trading platform powered by PydanticAI"
 readme = "README.md"

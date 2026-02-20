@@ -18,7 +18,7 @@ DB_PATH = "state/state.db"
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Swing Trader - multi-asset trading bot")
+    parser = argparse.ArgumentParser(description="Options Trading Bot - multi-asset trading bot")
     parser.add_argument(
         "--strategy",
         default=os.environ.get("STRATEGY_PATH", DEFAULT_STRATEGY),

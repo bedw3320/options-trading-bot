@@ -148,54 +148,6 @@ wheels = [
 ]
 
 [[package]]
-name = "alpaca-trading-bot"
-version = "0.2.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "alpaca-py" },
-    { name = "anthropic" },
-    { name = "httpx" },
-    { name = "pandas", version = "2.3.3", source = { registry = "https://pkgs.shopify.io/basic/data/python/simple/" }, marker = "python_full_version >= '3.14'" },
-    { name = "pandas", version = "3.0.0", source = { registry = "https://pkgs.shopify.io/basic/data/python/simple/" }, marker = "python_full_version < '3.14'" },
-    { name = "pandas-ta" },
-    { name = "praw" },
-    { name = "pydantic" },
-    { name = "pydantic-ai" },
-    { name = "python-dotenv" },
-    { name = "pytz" },
-    { name = "pyyaml" },
-    { name = "tavily" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-mock" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "alpaca-py", specifier = ">=0.35.1" },
-    { name = "anthropic", specifier = ">=0.75.0" },
-    { name = "httpx", specifier = ">=0.27.0" },
-    { name = "pandas", specifier = ">=2.2.0" },
-    { name = "pandas-ta", specifier = ">=0.3.14b1" },
-    { name = "praw", specifier = ">=7.8.1" },
-    { name = "pydantic", specifier = ">=2.12.5" },
-    { name = "pydantic-ai", specifier = ">=1.25.1" },
-    { name = "python-dotenv", specifier = ">=1.2.1" },
-    { name = "pytz", specifier = ">=2025.2" },
-    { name = "pyyaml", specifier = ">=6.0.2" },
-    { name = "tavily", specifier = ">=1.1.0" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest", specifier = ">=9.0.2" },
-    { name = "pytest-mock", specifier = ">=3.15.1" },
-]
-
-[[package]]
 name = "annotated-types"
 version = "0.7.0"
 source = { registry = "https://pkgs.shopify.io/basic/data/python/simple/" }
@@ -1796,6 +1748,54 @@ source = { registry = "https://pkgs.shopify.io/basic/data/python/simple/" }
 sdist = { url = "https://files.pythonhosted.org/packages/50/fc/c47bb04a1d8a941a4061307e1eddfa331ed4d0ab13d8a9781e6db256940a/opentelemetry_util_http-0.60b1.tar.gz", hash = "sha256:0d97152ca8c8a41ced7172d29d3622a219317f74ae6bb3027cfbdcf22c3cc0d6", size = 11053, upload-time = "2025-12-11T13:37:25.115Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/16/5c/d3f1733665f7cd582ef0842fb1d2ed0bc1fba10875160593342d22bba375/opentelemetry_util_http-0.60b1-py3-none-any.whl", hash = "sha256:66381ba28550c91bee14dcba8979ace443444af1ed609226634596b4b0faf199", size = 8947, upload-time = "2025-12-11T13:36:37.151Z" },
+]
+
+[[package]]
+name = "options-trading-bot"
+version = "0.2.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "alpaca-py" },
+    { name = "anthropic" },
+    { name = "httpx" },
+    { name = "pandas", version = "2.3.3", source = { registry = "https://pkgs.shopify.io/basic/data/python/simple/" }, marker = "python_full_version >= '3.14'" },
+    { name = "pandas", version = "3.0.0", source = { registry = "https://pkgs.shopify.io/basic/data/python/simple/" }, marker = "python_full_version < '3.14'" },
+    { name = "pandas-ta" },
+    { name = "praw" },
+    { name = "pydantic" },
+    { name = "pydantic-ai" },
+    { name = "python-dotenv" },
+    { name = "pytz" },
+    { name = "pyyaml" },
+    { name = "tavily" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-mock" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "alpaca-py", specifier = ">=0.35.1" },
+    { name = "anthropic", specifier = ">=0.75.0" },
+    { name = "httpx", specifier = ">=0.27.0" },
+    { name = "pandas", specifier = ">=2.2.0" },
+    { name = "pandas-ta", specifier = ">=0.3.14b1" },
+    { name = "praw", specifier = ">=7.8.1" },
+    { name = "pydantic", specifier = ">=2.12.5" },
+    { name = "pydantic-ai", specifier = ">=1.25.1" },
+    { name = "python-dotenv", specifier = ">=1.2.1" },
+    { name = "pytz", specifier = ">=2025.2" },
+    { name = "pyyaml", specifier = ">=6.0.2" },
+    { name = "tavily", specifier = ">=1.1.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=9.0.2" },
+    { name = "pytest-mock", specifier = ">=3.15.1" },
 ]
 
 [[package]]

@@ -26,7 +26,7 @@ def search_reddit(
     """
     client_id = os.environ.get("REDDIT_CLIENT_ID")
     client_secret = os.environ.get("REDDIT_CLIENT_SECRET")
-    user_agent = os.environ.get("REDDIT_USER_AGENT", "swing-trader/0.2.0")
+    user_agent = os.environ.get("REDDIT_USER_AGENT", "options-trading-bot/0.2.0")
 
     if not client_id or not client_secret:
         log.info("Reddit credentials not configured, skipping")

@@ -1,4 +1,4 @@
-You are a backtest planning assistant for the Swing Trader platform. Given a strategy YAML file, generate a comprehensive backtest plan.
+You are a backtest planning assistant for the Options Trading Bot platform. Given a strategy YAML file, generate a comprehensive backtest plan.
 
 ## Process
 

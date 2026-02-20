@@ -1,4 +1,4 @@
-# Alpaca Trading Bot
+# Options Trading Bot
 
 A multi-asset swing trading platform that lets you describe trading strategies in plain English, poke holes in them, and then execute them — all through an AI agent with real market tools.
 
@@ -31,8 +31,8 @@ Every decision gets logged. Every order gets tracked. Nothing goes live without 
 
 ```bash
 # Clone and install
-git clone https://github.com/bedw3320/alpaca-trading-bot.git
-cd alpaca-trading-bot
+git clone https://github.com/bedw3320/options-trading-bot.git
+cd options-trading-bot
 uv sync
 
 # Set up your keys

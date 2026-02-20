@@ -1,0 +1,35 @@
+## Operational Configuration — Options Trading Research Vault
+## Human-editable. Changes take effect on next session start.
+
+dimensions:
+  granularity: atomic
+  organization: flat
+  linking: explicit
+  processing: heavy
+  navigation: 3-tier
+  schema: moderate
+  automation: full
+
+processing:
+  depth: deep
+  chaining: suggested
+  extraction:
+    selectivity: moderate
+    categories:
+      - academic-claim
+      - parameter-range
+      - greek-dynamic
+      - failure-mode
+      - regime-filter
+      - open-question
+      - trade-mechanic
+      - instrument-profile
+  reweave:
+    scope: related
+    frequency: after_create
+
+maintenance:
+  orphan_threshold: 5
+  tension_threshold: 3
+  observation_threshold: 10
+  health_check_interval: weekly

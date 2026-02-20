@@ -45,10 +45,19 @@ Run these via `/project:command-name` when working in this project:
 
 | Command | File | Purpose |
 |---------|------|---------|
+| `/project:expert-interview` | `.claude/commands/expert-interview.md` | Interview domain expert: extract strategy knowledge, validate against vault, produce YAML + vault notes |
 | `/project:strategy-interview` | `.claude/commands/strategy-interview.md` | Interactive strategy design: idea -> questions -> weakness analysis -> YAML generation |
 | `/project:strategy-review` | `.claude/commands/strategy-review.md` | Load existing YAML, analyze gaps, risk sanity, data availability |
 | `/project:status` | `.claude/commands/status.md` | Dashboard: positions, P&L, strategy status, recent trades |
 | `/project:backtest-plan` | `.claude/commands/backtest-plan.md` | Generate a backtest plan for a strategy |
+| `/project:reduce` | `.claude/commands/reduce.md` | Extract atomic claims from source material into knowledge vault |
+| `/project:reflect` | `.claude/commands/reflect.md` | Find connections between notes, update topic maps |
+| `/project:verify` | `.claude/commands/verify.md` | Quality check: description, schema, link health |
+| `/project:reweave` | `.claude/commands/reweave.md` | Backward pass: update older notes with new context |
+| `/project:seed` | `.claude/commands/seed.md` | Register source document in processing queue |
+| `/project:pipeline` | `.claude/commands/pipeline.md` | End-to-end: seed → reduce → reflect → verify |
+| `/project:vault-stats` | `.claude/commands/vault-stats.md` | Knowledge vault metrics and health indicators |
+| `/project:vault-health` | `.claude/commands/vault-health.md` | Comprehensive vault health check |
 
 ## Skills
 

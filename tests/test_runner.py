@@ -63,7 +63,7 @@ def mock_deps():
     deps = MagicMock()
     deps.allow_trading = True
     deps.tavily = None
-    deps.alpaca = MagicMock()
+    deps.ib = MagicMock()
     return deps
 
 
@@ -71,7 +71,8 @@ def mock_deps():
 @pytest.fixture(autouse=True)
 def _patch_externals(monkeypatch):
     """Patch all external calls so tests never hit real APIs."""
-    monkeypatch.setattr("core.runner.alpaca_list_positions", lambda client: [])
+    monkeypatch.setattr("core.runner.ibkr_list_positions", lambda client: [])
+    monkeypatch.setattr("core.runner.ensure_connected", lambda ib: ib)
     monkeypatch.setattr("core.runner.should_strategy_run", lambda sessions, classes: True)
     monkeypatch.setattr(
         "core.runner._fetch_data_for_strategy",
@@ -156,7 +157,7 @@ class TestErrorHandling:
         monkeypatch.setattr("core.runner.count_daily_trades", lambda db, key: 0)
         monkeypatch.setattr("core.runner.get_account", lambda client: {"equity": "100000"})
         monkeypatch.setattr(
-            "core.runner.alpaca_create_order",
+            "core.runner.ibkr_create_order",
             MagicMock(side_effect=RuntimeError("API down")),
         )
 

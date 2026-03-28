@@ -11,6 +11,8 @@ import sys
 for key in list(sys.modules):
     if key.startswith("integrations") and hasattr(sys.modules[key], "_mock_name"):
         del sys.modules[key]
+    if key.startswith("schemas.deps") and hasattr(sys.modules[key], "_mock_name"):
+        del sys.modules[key]
 
 import pandas as pd
 import pytest

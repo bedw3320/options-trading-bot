@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from alpaca.trading.client import TradingClient
+from ib_insync import IB
 
-from integrations.alpaca.options_data import get_options_chain
+from integrations.ibkr.options_data import get_options_chain
 from utils.logging import get_logger
 
 log = get_logger(__name__)
 
 
 def analyze_options_flow(
-    client: TradingClient,
+    ib: IB,
     symbol: str,
     *,
     min_dte: int = 0,
@@ -27,7 +27,7 @@ def analyze_options_flow(
     log.info("Analyzing options flow: %s DTE=%d-%d", symbol, min_dte, max_dte)
 
     contracts = get_options_chain(
-        client,
+        ib,
         symbol,
         min_dte=min_dte,
         max_dte=max_dte,

@@ -1,6 +1,8 @@
 import argparse
 import os
+import sys
 import time
+from pathlib import Path
 
 from dotenv import load_dotenv
 from tavily import TavilyClient
@@ -8,7 +10,7 @@ from tavily import TavilyClient
 from core.agent import configure_model
 from core.runner import run_once
 from core.strategy_loader import load as load_strategy
-from integrations.alpaca.client import create_trading_client
+from integrations.ibkr.client import create_ib_client, disconnect
 from schemas.deps import Deps
 
 # defaults
@@ -46,15 +48,22 @@ def main():
     strategy = load_strategy(args.strategy)
     print(f"Loaded strategy: {strategy.name} (v{strategy.version})")
 
-    # configure model
-    configure_model(args.model, strict=True)
+    # configure model — fail fast if invalid
+    try:
+        configure_model(args.model, strict=True)
+    except (ValueError, Exception) as e:
+        print(f"ERROR: Model configuration failed: {e}")
+        sys.exit(1)
+
+    # ensure state directory exists
+    Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
 
     # build deps
     trading_mode = os.environ.get("TRADING_MODE", "paper")
     tavily_key = os.environ.get("TAVILY_API_KEY", "")
 
     deps = Deps(
-        alpaca=create_trading_client(trading_mode),
+        ib=create_ib_client(trading_mode),
         tavily=TavilyClient(api_key=tavily_key) if tavily_key else None,
         allow_trading=args.allow_trading,
     )
@@ -80,7 +89,9 @@ def main():
 
             time.sleep(max(int(sleep_s), 1))
     except KeyboardInterrupt:
-        print("Stopped.")
+        print("Stopping...")
+        disconnect()
+        print("Disconnected from IB Gateway.")
 
 
 if __name__ == "__main__":

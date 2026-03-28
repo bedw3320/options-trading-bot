@@ -1,12 +1,41 @@
 services:
+  ib-gateway:
+    image: ghcr.io/gnzsnz/ib-gateway:latest
+    container_name: ib-gateway
+    environment:
+      TWS_USERID: ${TWS_USERID}
+      TWS_PASSWORD: ${TWS_PASSWORD}
+      TRADING_MODE: ${TRADING_MODE:-paper}
+      TWS_ACCEPT_INCOMING: "accept"
+    ports:
+      - "4001:4001"
+      - "4002:4002"
+    volumes:
+      - ib-gateway-data:/root/Jts
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "4002"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
   agent:
     build: .
-    container_name: crypto-agent
+    container_name: trading-agent
     env_file:
       - .env
     environment:
       STATE_DB_PATH: /app/state/state.db
       STATE_KEY: sol-agent
+      IB_GATEWAY_HOST: ib-gateway
+      IB_GATEWAY_PORT: "4002"
     volumes:
       - ./state:/app/state
+    depends_on:
+      ib-gateway:
+        condition: service_healthy
     restart: unless-stopped
+
+volumes:
+  ib-gateway-data:

@@ -6,16 +6,18 @@ from typing import Any
 from core.agent import agent
 from core.market_hours import should_strategy_run
 from core.prompt_builder import build_strategy_prompt
-from integrations.alpaca.account import get_account
-from integrations.alpaca.market_data import get_crypto_bars, get_stock_bars
-from integrations.alpaca.orders import create_order as alpaca_create_order
-from integrations.alpaca.orders import get_order as alpaca_get_order
-from integrations.alpaca.positions import close_position as alpaca_close_position
-from integrations.alpaca.positions import list_positions as alpaca_list_positions
+from integrations.ibkr.account import get_account
+from integrations.ibkr.client import ensure_connected
+from integrations.ibkr.market_data import get_crypto_bars, get_stock_bars
+from integrations.ibkr.orders import create_order as ibkr_create_order
+from integrations.ibkr.orders import get_order as ibkr_get_order
+from integrations.ibkr.positions import close_position as ibkr_close_position
+from integrations.ibkr.positions import list_positions as ibkr_list_positions
 from integrations.data.news import aggregate_news
 from integrations.data.options_flow import analyze_options_flow
 from integrations.data.social import aggregate_social
 from integrations.data.technicals import compute_all
+from integrations.tavily.search import web_search as tavily_web_search
 from schemas.deps import Deps
 from schemas.strategy import StrategyConfig
 from utils.logging import get_logger
@@ -27,7 +29,7 @@ MIN_SLEEP_SECONDS = 15
 
 
 def snapshot_positions(deps: Deps) -> dict[str, Any]:
-    positions = alpaca_list_positions(deps.alpaca)
+    positions = ibkr_list_positions(deps.ib)
     return {
         p["symbol"]: {
             "qty": p.get("qty"),
@@ -66,9 +68,9 @@ def _fetch_data_for_strategy(
                 for ticker in tickers:
                     try:
                         if "crypto" in strategy.asset_universe.asset_classes:
-                            ohlcv[ticker] = get_crypto_bars(ticker, timeframe=timeframe, bars=bars_count).to_dict("records")
+                            ohlcv[ticker] = get_crypto_bars(deps.ib, ticker, timeframe=timeframe, bars=bars_count).to_dict("records")
                         else:
-                            ohlcv[ticker] = get_stock_bars(ticker, timeframe=timeframe, bars=bars_count).to_dict("records")
+                            ohlcv[ticker] = get_stock_bars(deps.ib, ticker, timeframe=timeframe, bars=bars_count).to_dict("records")
                     except Exception as e:
                         log.warning("OHLCV fetch failed for %s: %s", ticker, e)
                 data["ohlcv"] = ohlcv
@@ -105,10 +107,26 @@ def _fetch_data_for_strategy(
                 flow = {}
                 for ticker in tickers:
                     try:
-                        flow[ticker] = analyze_options_flow(deps.alpaca, ticker, min_volume_ratio=min_volume_ratio)
+                        flow[ticker] = analyze_options_flow(deps.ib, ticker, min_volume_ratio=min_volume_ratio)
                     except Exception as e:
                         log.warning("Options flow failed for %s: %s", ticker, e)
                 data["options_flow"] = flow
+
+            elif source == "web_search":
+                if deps.tavily is None:
+                    log.warning("web_search requested but Tavily not configured")
+                else:
+                    queries = params.get("queries", [])
+                    search_results = []
+                    for query_template in queries:
+                        for ticker in tickers:
+                            query = query_template.replace("{ticker}", ticker)
+                            try:
+                                result = tavily_web_search(deps.tavily, query=query)
+                                search_results.append(result)
+                            except Exception as e:
+                                log.warning("web_search failed for '%s': %s", query, e)
+                    data["web_search"] = search_results
 
         except Exception as e:
             log.warning("Data source '%s' failed: %s", source, e)
@@ -124,7 +142,7 @@ def reconcile_order_and_positions(
     db_path: str,
     state_key: str,
 ) -> dict[str, Any]:
-    order = alpaca_get_order(deps.alpaca, order_id=order_id)
+    order = ibkr_get_order(deps.ib, order_id=order_id)
 
     state.setdefault("orders", {})
     state["orders"][order_id] = {
@@ -166,6 +184,9 @@ def run_once(
     """
     if state_key is None:
         state_key = strategy.name
+
+    # --- Ensure IB connection is alive ---
+    ensure_connected(deps.ib)
 
     # --- Market hours gate ---
     if not should_strategy_run(strategy.schedule.active_sessions, strategy.asset_universe.asset_classes):
@@ -221,7 +242,7 @@ def run_once(
     # --- Handle close_position ---
     if out.next_action == "close_position" and out.order and out.order.symbol:
         try:
-            closed = alpaca_close_position(deps.alpaca, symbol_or_asset_id=out.order.symbol)
+            closed = ibkr_close_position(deps.ib, symbol_or_asset_id=out.order.symbol)
             append_event(db_path, state_key, "position_closed", {"order": closed})
         except Exception as e:
             log.error("Close position failed for %s: %s", out.order.symbol, e)
@@ -251,7 +272,7 @@ def run_once(
         return max(int(out.sleep_seconds), MIN_SLEEP_SECONDS)
 
     try:
-        account = get_account(deps.alpaca)
+        account = get_account(deps.ib)
         equity = float(account.get("equity") or 0)
     except Exception as e:
         log.error("Failed to fetch account for risk checks: %s", e)
@@ -292,13 +313,14 @@ def run_once(
 
     # --- Place order with error handling ---
     try:
-        placed = alpaca_create_order(
-            deps.alpaca,
+        placed = ibkr_create_order(
+            deps.ib,
             symbol=out.order.symbol,
             notional=float(out.order.notional),
             side=out.order.side,
             time_in_force=out.order.time_in_force,
             order_type="market",
+            contract_symbol=out.order.contract_symbol,
         )
     except Exception as e:
         log.error("Order placement failed: %s", e)

@@ -6,13 +6,13 @@ from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.test import TestModel
 
 from core.routing import build_model
-from integrations.alpaca.account import get_account as alpaca_get_account
-from integrations.alpaca.assets import list_crypto_assets as alpaca_list_crypto_assets
-from integrations.alpaca.market_data import get_crypto_bars, get_stock_bars, get_stock_quote
-from integrations.alpaca.options_data import get_options_chain as alpaca_get_options_chain
-from integrations.alpaca.orders import create_order as alpaca_create_order
-from integrations.alpaca.positions import close_position as alpaca_close_position
-from integrations.alpaca.positions import list_positions as alpaca_list_positions
+from integrations.ibkr.account import get_account as ibkr_get_account
+from integrations.ibkr.assets import list_crypto_assets as ibkr_list_crypto_assets
+from integrations.ibkr.market_data import get_crypto_bars, get_stock_bars, get_stock_quote
+from integrations.ibkr.options_data import get_options_chain as ibkr_get_options_chain
+from integrations.ibkr.orders import create_order as ibkr_create_order
+from integrations.ibkr.positions import close_position as ibkr_close_position
+from integrations.ibkr.positions import list_positions as ibkr_list_positions
 from integrations.tavily.search import web_search as tavily_web_search
 from schemas.deps import Deps
 from schemas.output import AgentResult
@@ -65,17 +65,17 @@ def web_search(
 
 @agent.tool
 def get_account(ctx: RunContext[Deps]) -> dict[str, Any]:
-    return alpaca_get_account(ctx.deps.alpaca)
+    return ibkr_get_account(ctx.deps.ib)
 
 
 @agent.tool
 def get_crypto_assets(ctx: RunContext[Deps]) -> list[dict[str, Any]]:
-    return alpaca_list_crypto_assets(ctx.deps.alpaca)
+    return ibkr_list_crypto_assets(ctx.deps.ib)
 
 
 @agent.tool
 def get_positions(ctx: RunContext[Deps]) -> dict[str, Any]:
-    positions = alpaca_list_positions(ctx.deps.alpaca)
+    positions = ibkr_list_positions(ctx.deps.ib)
     return {"positions": positions}
 
 
@@ -86,17 +86,19 @@ def create_order(
     notional: float,
     side: Literal["buy", "sell"],
     time_in_force: Literal["gtc", "ioc", "day"] = "ioc",
+    contract_symbol: str | None = None,
 ) -> dict[str, Any]:
     if not ctx.deps.allow_trading:
         return {"ok": False, "reason": "Trading disabled (allow_trading=False)."}
 
-    result = alpaca_create_order(
-        ctx.deps.alpaca,
+    result = ibkr_create_order(
+        ctx.deps.ib,
         symbol=symbol,
         notional=notional,
         side=side,
         time_in_force=time_in_force,
         order_type="market",
+        contract_symbol=contract_symbol,
     )
     return {"ok": True, "order": result}
 
@@ -111,8 +113,8 @@ def close_position(
     if not ctx.deps.allow_trading:
         return {"ok": False, "reason": "Trading disabled (allow_trading=False)."}
 
-    order = alpaca_close_position(
-        ctx.deps.alpaca,
+    order = ibkr_close_position(
+        ctx.deps.ib,
         symbol_or_asset_id=symbol_or_asset_id,
         qty=qty,
         percentage=percentage,
@@ -128,7 +130,7 @@ def get_stock_data(
     bars: int = 60,
 ) -> dict[str, Any]:
     """Get stock OHLCV data. Returns summary stats."""
-    df = get_stock_bars(symbol, timeframe=timeframe, bars=bars)
+    df = get_stock_bars(ctx.deps.ib, symbol, timeframe=timeframe, bars=bars)
     if df.empty:
         return {"error": f"No data for {symbol}"}
     latest = df.iloc[-1]
@@ -151,7 +153,7 @@ def get_crypto_data(
     bars: int = 48,
 ) -> dict[str, Any]:
     """Get crypto OHLCV data. Returns summary stats."""
-    df = get_crypto_bars(symbol, timeframe=timeframe, bars=bars)
+    df = get_crypto_bars(ctx.deps.ib, symbol, timeframe=timeframe, bars=bars)
     if df.empty:
         return {"error": f"No data for {symbol}"}
     latest = df.iloc[-1]
@@ -172,7 +174,7 @@ def get_quote(
     symbol: str,
 ) -> dict[str, Any]:
     """Get the latest quote (bid/ask) for a stock."""
-    return get_stock_quote(symbol)
+    return get_stock_quote(ctx.deps.ib, symbol)
 
 
 @agent.tool
@@ -184,8 +186,8 @@ def get_options_chain(
     limit: int = 50,
 ) -> dict[str, Any]:
     """Get options chain for a ticker."""
-    contracts = alpaca_get_options_chain(
-        ctx.deps.alpaca,
+    contracts = ibkr_get_options_chain(
+        ctx.deps.ib,
         underlying_symbol,
         min_dte=min_dte,
         max_dte=max_dte,

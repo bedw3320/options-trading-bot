@@ -1,6 +1,6 @@
 # Options Trading Bot
 
-Multi-asset swing trading platform (stocks, options, crypto) powered by PydanticAI + Alpaca.
+Multi-asset swing trading platform (stocks, options, crypto) powered by PydanticAI + Interactive Brokers.
 
 ## Architecture
 
@@ -19,11 +19,11 @@ schemas/
   market.py                 # MarketSnapshot, TickerSnapshot
   deps.py                   # Deps dataclass (injected into agent)
 integrations/
-  alpaca/                   # Alpaca SDK wrappers (alpaca-py)
-    client.py               # TradingClient factory (paper/live toggle)
+  ibkr/                     # Interactive Brokers wrappers (ib_insync)
+    client.py               # IB Gateway connection factory (paper/live toggle)
     account.py, positions.py, orders.py, assets.py
     market_data.py          # Stock/crypto OHLCV data
-    options_data.py         # Options chain, quotes, contracts
+    options_data.py         # Options chain, contracts
   data/                     # Data pipeline
     technicals.py           # pandas-ta indicators (RSI, SMA, VWAP, MACD, etc.)
     news.py                 # Tavily + Alpaca News API
@@ -112,7 +112,8 @@ TRADING_MODE=paper uv run python main.py --strategy strategies/examples/sol-mome
 ## Environment Variables
 
 See `.env.example` for all required variables. Key ones:
-- `ALPACA_KEY` / `ALPACA_SECRET` - Alpaca API credentials
+- `TWS_USERID` / `TWS_PASSWORD` - Interactive Brokers credentials
+- `IB_GATEWAY_HOST` / `IB_GATEWAY_PORT` - IB Gateway connection (defaults: `ib-gateway` / `4002`)
 - `TRADING_MODE` - `paper` (default) or `live`
 - `ANTHROPIC_API_KEY` - For Claude model
 - `TAVILY_API_KEY` - For web search

@@ -48,6 +48,9 @@ docker compose up
 TRADING_MODE=paper uv run python main.py --strategy strategies/examples/sol-momentum.yaml
 
 uv run pytest tests/ -v
+
+# Paper identity check (no orders). Requires Gateway + IB_ACCOUNT_ID.
+uv run python -m core.paper_readiness
 ```
 
 Without `--allow-trading`, the loop researches and journals. It does not send.
@@ -60,7 +63,7 @@ Without `--allow-trading`, the loop researches and journals. It does not send.
 
 **Data pipeline** — Technicals (`pandas-ta`), news (Tavily), social (Reddit + StockTwits), options flow (IBKR chain). Injected from `data_requirements`.
 
-**AI agent** — PydanticAI tools for market data, account, positions, orders. Structured `AgentResult` + `OrderIntent`. Confidence gate (default 0.75).
+**AI agent** — PydanticAI tools for market data, account, positions. Structured `AgentResult` + `OrderIntent`. Confidence gate (default 0.75). Agent tools cannot place; the runner sends via `GuardedBroker`.
 
 **Risk in code** — Daily trade limit, per-position cap, total exposure cap in `core/runner.py`. Breaches log as `risk_blocked`.
 
@@ -80,6 +83,7 @@ Copy `.env.example` to `.env`:
 | `IB_GATEWAY_HOST` | No | Default `ib-gateway` in compose, `127.0.0.1` locally |
 | `IB_GATEWAY_PORT` | No | Default 4002 paper / 4001 live |
 | `IB_CLIENT_ID` | No | Default `1` |
+| `IB_ACCOUNT_ID` | Yes (identity / readiness) | Connected paper account (typically `DU*`) |
 | `ANTHROPIC_API_KEY` | Yes (agent) | Model key |
 | `TAVILY_API_KEY` | No | Web/news search |
 | `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` | No | Social sentiment |
@@ -93,7 +97,9 @@ Copy `.env.example` to `.env`:
 - **Risk controls in code** — not just in the prompt
 - **Market hours** — strategies only run in their configured sessions
 - **Everything logged** — agent output, orders, `risk_blocked`
-- **Known gaps** — one-hop `create_order`; Gateway identity not verified against account id. See `LOOP.md`. Do not arm live until those close.
+- **Identity gate** — `managedAccounts` must match `IB_ACCOUNT_ID`; live-looking `U*` or port 4001 aborts. See [`knowledge/ops/paper-readiness.md`](knowledge/ops/paper-readiness.md).
+- **Guarded placement** — runner preview → single-use token → risk revalidate → place. Agent `create_order` / `close_position` refuse to send.
+- **Live is not armed** — remaining Epic 2 items (idempotency, cancel/flatten) and constraint 3 (autonomy latch) are not done. See `LOOP.md`.
 
 ## Commands
 
@@ -133,4 +139,4 @@ docker-compose.yml               # ib-gateway + agent
 
 ---
 
-*Paper trade everything. Twice. Then maybe consider going live — and only after `LOOP.md` constraints 1–2 exist in code.*
+*Paper trade everything. Twice. Identity + token handshake are in code. Do not arm live until the autonomy latch exists.*

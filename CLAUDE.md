@@ -11,8 +11,11 @@ Standalone runtime. No sibling personal repos. No shared secrets.
 ```
 main.py                     # Entry point - loads strategy, runs loop
 core/
-  agent.py                  # PydanticAI agent with tools
+  agent.py                  # PydanticAI agent with tools (place tools refuse)
   runner.py                 # Main execution loop (strategy -> data -> agent -> orders)
+  identity.py               # Paper account identity gate
+  guarded_broker.py         # preview → token → revalidate → place
+  paper_readiness.py        # Mini paper Gateway check (no orders)
   routing.py                # Model provider routing
   strategy_loader.py        # YAML -> StrategyConfig parser
   prompt_builder.py         # Strategy + market state -> agent prompt
@@ -95,11 +98,12 @@ Strategies are YAML files validated by `schemas/strategy.py::StrategyConfig`. En
 - `--allow-trading` must be passed to enable order execution
 - Confidence threshold (default 0.75) gates trade execution
 - All decisions and orders logged to SQLite (`state/state.db`)
-- **Paper trade every strategy before considering live.** Do not arm live until `LOOP.md` constraints 1–2 (preview-token handshake + account-identity check) exist in code.
-- Agent `create_order` is still one-hop — a known gap. Do not add more one-hop paths.
+- **Paper trade every strategy before considering live.** Constraints 1–2 exist (`core/identity.py`, `core/guarded_broker.py`). Do not arm live until constraint 3 (autonomy latch) exists.
+- Agent `create_order` / `close_position` refuse to place. Runner-only send via `GuardedBroker`. Do not add one-hop paths.
+- Paper identity check: `uv run python -m core.paper_readiness`
 
 ### Agent Tools
-The PydanticAI agent has tools for: web search, account info, positions, orders, stock/crypto market data, options chains. Tools check `deps.allow_trading` before executing any trade. Broker I/O is `integrations/ibkr/` only.
+The PydanticAI agent has tools for: web search, account info, positions, stock/crypto market data, options chains. Place/close tools refuse; the runner places via `GuardedBroker`. Broker I/O is `integrations/ibkr/` only.
 
 ## Development
 

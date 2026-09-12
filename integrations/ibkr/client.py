@@ -48,6 +48,8 @@ def create_ib_client(trading_mode: str | None = None) -> IB:
     log.info("Connecting to IB Gateway at %s:%d (mode=%s, clientId=%d)", host, port, mode, client_id)
     ib.connect(host, port, clientId=client_id)
     log.info("Connected to IB Gateway")
+    # TRADING_MODE/port are not identity. Call core.identity.assert_paper_identity
+    # before any place path (runner / GuardedBroker / paper_readiness).
 
     _ib = ib
     return _ib

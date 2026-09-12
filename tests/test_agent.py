@@ -30,11 +30,12 @@ mock_schemas_deps.Deps = MockDeps
 sys.modules["schemas.deps"] = mock_schemas_deps
 
 # schemas output — use real models so the agent can validate output
-from schemas.output import AgentResult, OrderIntent
+from schemas.output import AgentResult, OrderIntent, TradeIntent
 
 mock_schemas_output = MagicMock()
 mock_schemas_output.AgentResult = AgentResult
 mock_schemas_output.OrderIntent = OrderIntent
+mock_schemas_output.TradeIntent = TradeIntent
 sys.modules["schemas.output"] = mock_schemas_output
 
 # integrations
@@ -125,10 +126,7 @@ def test_get_account_formatting(mocker, mock_deps):
     mock_get_account.assert_called_once_with(mock_deps.ib)
 
 
-def test_create_order_happy_path(mocker, mock_deps):
-    mock_create_order = mocker.patch("core.agent.ibkr_create_order")
-    mock_create_order.return_value = {"id": "order_123", "status": "filled"}
-
+def test_create_order_guarded_rejects(mocker, mock_deps):
     mock_deps.allow_trading = True
 
     agent.model = TestModel()
@@ -145,14 +143,16 @@ def test_create_order_happy_path(mocker, mock_deps):
 
     agent.run_sync("Buy $100 BTC", deps=mock_deps)
 
-    mock_create_order.assert_called_once()
-    assert mock_create_order.call_args.kwargs["symbol"] == "BTC/USD"
-    assert mock_create_order.call_args.kwargs["notional"] == 100
-    assert mock_create_order.call_args.kwargs["side"] == "buy"
+    second_call_args = agent.model.request.call_args_list[1]
+    messages = second_call_args[0][0]
+    last_msg = messages[-1]
+    assert isinstance(last_msg, ModelRequest)
+    tool_return = next(p for p in last_msg.parts if isinstance(p, ToolReturnPart))
+    assert tool_return.content["ok"] is False
+    assert "Guarded mode" in tool_return.content["reason"]
 
 
 def test_create_order_trading_disabled(mocker, mock_deps):
-    mock_create_order = mocker.patch("core.agent.ibkr_create_order")
     mock_deps.allow_trading = False
 
     agent.model = TestModel()
@@ -168,8 +168,6 @@ def test_create_order_trading_disabled(mocker, mock_deps):
     agent.model.request.side_effect = _tool_then_done(first)
 
     agent.run_sync("Sell ETH", deps=mock_deps)
-
-    mock_create_order.assert_not_called()
 
     second_call_args = agent.model.request.call_args_list[1]
     messages = second_call_args[0][0]
@@ -191,9 +189,7 @@ def test_upstream_api_failure_handling(mocker, mock_deps):
         agent.run_sync("Show my positions", deps=mock_deps)
 
 
-def test_close_position_logic(mocker, mock_deps):
-    mock_close = mocker.patch("core.agent.ibkr_close_position")
-    mock_close.return_value = {"id": "order_456", "status": "closed", "symbol": "BTC"}
+def test_close_position_guarded_rejects(mocker, mock_deps):
     mock_deps.allow_trading = True
 
     agent.model = TestModel()
@@ -210,6 +206,10 @@ def test_close_position_logic(mocker, mock_deps):
 
     agent.run_sync("Close half my BTC", deps=mock_deps)
 
-    mock_close.assert_called_once()
-    assert mock_close.call_args.kwargs["symbol_or_asset_id"] == "BTC"
-    assert mock_close.call_args.kwargs["percentage"] == 0.5
+    second_call_args = agent.model.request.call_args_list[1]
+    messages = second_call_args[0][0]
+    last_msg = messages[-1]
+    assert isinstance(last_msg, ModelRequest)
+    tool_return = next(p for p in last_msg.parts if isinstance(p, ToolReturnPart))
+    assert tool_return.content["ok"] is False
+    assert "Guarded mode" in tool_return.content["reason"]

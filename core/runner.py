@@ -4,14 +4,14 @@ import time
 from typing import Any
 
 from core.agent import agent
+from core.guarded_broker import GuardedReject, execute_close, execute_intent
+from core.identity import IdentityError, assert_paper_identity
 from core.market_hours import should_strategy_run
 from core.prompt_builder import build_strategy_prompt
 from integrations.ibkr.account import get_account
 from integrations.ibkr.client import ensure_connected
 from integrations.ibkr.market_data import get_crypto_bars, get_stock_bars
-from integrations.ibkr.orders import create_order as ibkr_create_order
 from integrations.ibkr.orders import get_order as ibkr_get_order
-from integrations.ibkr.positions import close_position as ibkr_close_position
 from integrations.ibkr.positions import list_positions as ibkr_list_positions
 from integrations.data.news import aggregate_news
 from integrations.data.options_flow import analyze_options_flow
@@ -19,6 +19,7 @@ from integrations.data.social import aggregate_social
 from integrations.data.technicals import compute_all
 from integrations.tavily.search import web_search as tavily_web_search
 from schemas.deps import Deps
+from schemas.output import OrderIntent
 from schemas.strategy import StrategyConfig
 from utils.logging import get_logger
 from utils.state import append_event, count_daily_trades, load_state, save_state
@@ -42,6 +43,78 @@ def snapshot_positions(deps: Deps) -> dict[str, Any]:
         }
         for p in positions
     }
+
+
+def _risk_block_reason(
+    strategy: StrategyConfig,
+    order: OrderIntent,
+    deps: Deps,
+    positions: dict[str, Any],
+    *,
+    db_path: str,
+    state_key: str,
+) -> tuple[str, dict[str, Any]] | None:
+    daily_trades = count_daily_trades(db_path, state_key)
+    if daily_trades >= strategy.risk.max_daily_trades:
+        return "max_daily_trades", {"count": daily_trades}
+
+    try:
+        account = get_account(deps.ib)
+        equity = float(account.get("equity") or 0)
+    except Exception as e:
+        return "account_fetch_failed", {"error": str(e)}
+
+    if equity <= 0:
+        return None
+
+    max_position_notional = equity * (strategy.risk.max_position_pct / 100)
+    if order.notional is not None and order.notional > max_position_notional:
+        return "max_position_pct", {
+            "notional": order.notional,
+            "limit": max_position_notional,
+            "equity": equity,
+            "max_position_pct": strategy.risk.max_position_pct,
+        }
+
+    current_exposure = sum(
+        abs(float(p.get("market_value") or 0))
+        for p in positions.values()
+    )
+    max_exposure = equity * (strategy.risk.max_total_exposure_pct / 100)
+    if order.notional is not None and current_exposure + order.notional > max_exposure:
+        return "max_total_exposure_pct", {
+            "current_exposure": current_exposure,
+            "order_notional": order.notional,
+            "limit": max_exposure,
+        }
+
+    return None
+
+
+def _log_risk_block(reason: str, detail: dict[str, Any], strategy: StrategyConfig) -> None:
+    if reason == "max_daily_trades":
+        log.warning(
+            "Daily trade limit reached (%d/%d)",
+            detail.get("count"),
+            strategy.risk.max_daily_trades,
+        )
+    elif reason == "account_fetch_failed":
+        log.error("Failed to fetch account for risk checks: %s", detail.get("error"))
+    elif reason == "max_position_pct":
+        log.warning(
+            "Position size $%.2f exceeds limit $%.2f (%.1f%% of $%.2f)",
+            detail.get("notional"),
+            detail.get("limit"),
+            detail.get("max_position_pct"),
+            detail.get("equity"),
+        )
+    elif reason == "max_total_exposure_pct":
+        log.warning(
+            "Total exposure $%.2f + $%.2f exceeds limit $%.2f",
+            detail.get("current_exposure"),
+            detail.get("order_notional"),
+            detail.get("limit"),
+        )
 
 
 def _fetch_data_for_strategy(
@@ -187,6 +260,7 @@ def run_once(
 
     # --- Ensure IB connection is alive ---
     ensure_connected(deps.ib)
+    assert_paper_identity(deps.ib)
 
     # --- Market hours gate ---
     if not should_strategy_run(strategy.schedule.active_sessions, strategy.asset_universe.asset_classes):
@@ -242,8 +316,17 @@ def run_once(
     # --- Handle close_position ---
     if out.next_action == "close_position" and out.order and out.order.symbol:
         try:
-            closed = ibkr_close_position(deps.ib, symbol_or_asset_id=out.order.symbol)
+            closed = execute_close(
+                deps.ib,
+                out.order.symbol,
+                allow_trading=deps.allow_trading,
+            )
             append_event(db_path, state_key, "position_closed", {"order": closed})
+        except IdentityError:
+            raise
+        except GuardedReject as e:
+            log.error("Close position rejected for %s: %s", out.order.symbol, e)
+            append_event(db_path, state_key, "close_position_error", {"error": str(e)})
         except Exception as e:
             log.error("Close position failed for %s: %s", out.order.symbol, e)
             append_event(db_path, state_key, "close_position_error", {"error": str(e)})
@@ -264,64 +347,48 @@ def run_once(
         print("Trade requested but notional missing/invalid -> skipping.")
         return max(int(out.sleep_seconds), MIN_SLEEP_SECONDS)
 
-    # --- Risk controls ---
-    daily_trades = count_daily_trades(db_path, state_key)
-    if daily_trades >= strategy.risk.max_daily_trades:
-        log.warning("Daily trade limit reached (%d/%d)", daily_trades, strategy.risk.max_daily_trades)
-        append_event(db_path, state_key, "risk_blocked", {"reason": "max_daily_trades", "count": daily_trades})
+    # --- Risk controls (code, then again at send) ---
+    blocked = _risk_block_reason(
+        strategy,
+        out.order,
+        deps,
+        state.get("positions", {}),
+        db_path=db_path,
+        state_key=state_key,
+    )
+    if blocked:
+        reason, detail = blocked
+        _log_risk_block(reason, detail, strategy)
+        append_event(db_path, state_key, "risk_blocked", {"reason": reason, **detail})
+        if reason == "account_fetch_failed":
+            return MIN_SLEEP_SECONDS
         return max(int(out.sleep_seconds), MIN_SLEEP_SECONDS)
 
-    try:
-        account = get_account(deps.ib)
-        equity = float(account.get("equity") or 0)
-    except Exception as e:
-        log.error("Failed to fetch account for risk checks: %s", e)
-        append_event(db_path, state_key, "risk_blocked", {"reason": "account_fetch_failed", "error": str(e)})
-        return MIN_SLEEP_SECONDS
-
-    if equity > 0:
-        max_position_notional = equity * (strategy.risk.max_position_pct / 100)
-        if out.order.notional > max_position_notional:
-            log.warning(
-                "Position size $%.2f exceeds limit $%.2f (%.1f%% of $%.2f)",
-                out.order.notional, max_position_notional, strategy.risk.max_position_pct, equity,
-            )
-            append_event(db_path, state_key, "risk_blocked", {
-                "reason": "max_position_pct",
-                "notional": out.order.notional,
-                "limit": max_position_notional,
-            })
-            return max(int(out.sleep_seconds), MIN_SLEEP_SECONDS)
-
-        current_exposure = sum(
-            abs(float(p.get("market_value") or 0))
-            for p in state.get("positions", {}).values()
+    def _revalidate(intent: OrderIntent) -> None:
+        again = _risk_block_reason(
+            strategy,
+            intent,
+            deps,
+            state.get("positions", {}),
+            db_path=db_path,
+            state_key=state_key,
         )
-        max_exposure = equity * (strategy.risk.max_total_exposure_pct / 100)
-        if current_exposure + out.order.notional > max_exposure:
-            log.warning(
-                "Total exposure $%.2f + $%.2f exceeds limit $%.2f",
-                current_exposure, out.order.notional, max_exposure,
-            )
-            append_event(db_path, state_key, "risk_blocked", {
-                "reason": "max_total_exposure_pct",
-                "current_exposure": current_exposure,
-                "order_notional": out.order.notional,
-                "limit": max_exposure,
-            })
-            return max(int(out.sleep_seconds), MIN_SLEEP_SECONDS)
+        if again:
+            raise GuardedReject(again[0])
 
-    # --- Place order with error handling ---
     try:
-        placed = ibkr_create_order(
+        placed = execute_intent(
             deps.ib,
-            symbol=out.order.symbol,
-            notional=float(out.order.notional),
-            side=out.order.side,
-            time_in_force=out.order.time_in_force,
-            order_type="market",
-            contract_symbol=out.order.contract_symbol,
+            out.order,
+            allow_trading=deps.allow_trading,
+            revalidate=_revalidate,
         )
+    except IdentityError:
+        raise
+    except GuardedReject as e:
+        log.error("Guarded placement rejected: %s", e)
+        append_event(db_path, state_key, "order_error", {"error": str(e)})
+        return MIN_SLEEP_SECONDS
     except Exception as e:
         log.error("Order placement failed: %s", e)
         append_event(db_path, state_key, "order_error", {"error": str(e)})

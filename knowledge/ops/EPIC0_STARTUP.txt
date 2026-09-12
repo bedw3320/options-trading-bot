@@ -6,3 +6,4 @@ docker context use colima
 docker compose up -d ib-gateway
 # host API: 127.0.0.1:4002  (maps to container socat 4004)
 # verify: managedAccounts includes DUT116016 only; abort if live U*
+# uv run python -m core.paper_readiness

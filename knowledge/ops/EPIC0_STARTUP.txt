@@ -1,0 +1,8 @@
+# Mini paper Gateway startup (Epic 0)
+cd "$HOME/Documents/GitHub Repos/options-trading-bot"
+colima start   # if not running
+docker context use colima
+# .env must have TWS_USERID=lfhims684 IB_ACCOUNT_ID=DUT116016 TRADING_MODE=paper TWS_PASSWORD=...
+docker compose up -d ib-gateway
+# host API: 127.0.0.1:4002  (maps to container socat 4004)
+# verify: managedAccounts includes DUT116016 only; abort if live U*

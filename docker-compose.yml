@@ -7,14 +7,17 @@ services:
       TWS_PASSWORD: ${TWS_PASSWORD}
       TRADING_MODE: ${TRADING_MODE:-paper}
       TWS_ACCEPT_INCOMING: "accept"
+      READ_ONLY_API: "no"
     ports:
-      - "4001:4001"
-      - "4002:4002"
+      # gnzsnz: host paper 4002 -> container socat 4004 -> Gateway 4002
+      #         host live 4001 -> container socat 4003 -> Gateway 4001
+      - "4001:4003"
+      - "4002:4004"
     volumes:
       - ib-gateway-data:/root/Jts
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "4002"]
+      test: ["CMD", "nc", "-z", "localhost", "4004"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -29,7 +32,7 @@ services:
       STATE_DB_PATH: /app/state/state.db
       STATE_KEY: sol-agent
       IB_GATEWAY_HOST: ib-gateway
-      IB_GATEWAY_PORT: "4002"
+      IB_GATEWAY_PORT: "4004"
     volumes:
       - ./state:/app/state
     depends_on:

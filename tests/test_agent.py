@@ -30,11 +30,12 @@ mock_schemas_deps.Deps = MockDeps
 sys.modules["schemas.deps"] = mock_schemas_deps
 
 # schemas output — use real models so the agent can validate output
-from schemas.output import AgentResult, OrderIntent
+from schemas.output import AgentResult, OrderIntent, TradeIntent
 
 mock_schemas_output = MagicMock()
 mock_schemas_output.AgentResult = AgentResult
 mock_schemas_output.OrderIntent = OrderIntent
+mock_schemas_output.TradeIntent = TradeIntent
 sys.modules["schemas.output"] = mock_schemas_output
 
 # integrations

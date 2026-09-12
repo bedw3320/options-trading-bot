@@ -17,5 +17,5 @@ Do not import, submodule, copy secrets from, or write into any other personal pr
 ## Defaults
 
 - Paper. Trading disabled until `--allow-trading`.
-- LLM proposes `OrderIntent`. Code places orders. One-hop `create_order` is a known gap (`LOOP.md` constraint 1) — do not add more one-hop paths.
+- LLM proposes `OrderIntent`. Code places via `GuardedBroker` (preview → token → revalidate). Agent tools cannot one-hop. Do not add one-hop paths.
 - No strategy work in a harness session unless asked.

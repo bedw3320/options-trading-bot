@@ -1,3 +1,10 @@
+"""Strategy → harness contract.
+
+`OrderIntent` (alias `TradeIntent`) is the only object a strategy or reasoning
+agent may propose for execution. Strategies must not import `ib_insync` or call
+broker I/O. The runner places via `GuardedBroker` after identity + token handshake.
+"""
+
 from __future__ import annotations
 
 from typing import Literal
@@ -6,6 +13,8 @@ from pydantic import BaseModel, Field
 
 
 class OrderIntent(BaseModel):
+    """Proposed trade. Not an order — code must preview, confirm, then place."""
+
     symbol: str
     side: Literal["buy", "sell", "hold"]
     notional: float | None = Field(default=None, gt=0)
@@ -15,6 +24,9 @@ class OrderIntent(BaseModel):
     option_type: Literal["call", "put"] | None = None
     strike: float | None = Field(default=None, ge=0)
     dte: int | None = Field(default=None, ge=0, description="Days to expiration")
+
+
+TradeIntent = OrderIntent
 
 
 class AgentResult(BaseModel):

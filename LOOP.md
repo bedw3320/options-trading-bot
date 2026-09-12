@@ -51,9 +51,9 @@ Cursor Cloud must not hold TWS passwords and must not place orders. IBKR’s pub
 
 ## Four constraints (inviolable)
 
-1. **LLM proposes. Code places.** An `OrderIntent` (`schemas/output.py`) is not an order. Execution requires preview → single-use confirmation token → place, with risk **re-validated at send**. Today this is **not implemented**: `core/agent.py::create_order` and `core/runner.py` still send in one hop. Closing that gap is the next code change.
+1. **LLM proposes. Code places.** An `OrderIntent` (`schemas/output.py`) is not an order. Execution requires preview → single-use confirmation token → place, with risk **re-validated at send**. In code: `core/guarded_broker.py`. Agent `create_order` / `close_position` tools refuse to place. The runner is the only send path. Token is in-process, single-use, and expires.
 
-2. **Hands fail closed on identity.** Before any place, code must verify the connected IBKR account id and paper/live flag match config. A `TRADING_MODE=paper` label sitting on a live Gateway port is a hard abort. Today this is **not implemented**: `integrations/ibkr/client.py` connects to host/port and trusts the env label.
+2. **Hands fail closed on identity.** Before any place, code must verify the connected IBKR account id and paper/live flag match config. A `TRADING_MODE=paper` label sitting on a live Gateway port is a hard abort. In code: `core/identity.py::assert_paper_identity` (runner, GuardedBroker, `paper_readiness`). `integrations/ibkr/client.py` still connects by host/port only — it does not infer identity from the socket.
 
 3. **Autonomy is armed, not implied.** Default: propose and journal, do not send. `--allow-trading` enables paper sends only when `TRADING_MODE=paper`. Live requires `TRADING_MODE=live` **and** `--allow-trading` **and** an explicit autonomy arm that can latch off on daily loss or Gateway disconnect. Human-confirmed explicit tickets are not silently resized.
 
@@ -72,7 +72,7 @@ Cursor Cloud must not hold TWS passwords and must not place orders. IBKR’s pub
 
 `dry` → research → `OrderIntent` → code risk → preview token → (human **or** armed autonomy) → place → fill log → stop.
 
-Until constraints 1–2 ship in code, do not arm live. Paper with `--allow-trading` is still one-hop; treat it as a Gateway connectivity test, not as the target loop.
+Constraints 1–2 are in code. Do not arm live: constraint 3 (autonomy latch) and remaining Epic 2 items (idempotency, cancel/flatten) are not. Paper with `--allow-trading` uses the tokenized runner path.
 
 ## Isolation
 

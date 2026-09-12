@@ -18,7 +18,9 @@ Harness law: `LOOP.md`. Isolation: this repo only — no sibling personal projec
 - `core/runner.py` - Main loop
 - `core/agent.py` - PydanticAI agent with tools
 - `schemas/strategy.py` - StrategyConfig model
-- `schemas/output.py` - `OrderIntent` / `AgentResult`
+- `schemas/output.py` - `OrderIntent` / `TradeIntent` / `AgentResult`
+- `core/identity.py` - paper account identity gate
+- `core/guarded_broker.py` - preview → token → place
 - `core/strategy_loader.py` - YAML parser
 - `core/prompt_builder.py` - Strategy -> prompt
 - `integrations/ibkr/` - IB Gateway client, account, orders, market data, options

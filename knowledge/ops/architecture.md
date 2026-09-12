@@ -80,5 +80,5 @@ flowchart TB
 ## Gaps not to draw as shipped
 
 - strategies/active empty
-- identity abort + preview-token not in code
 - Epic 0 fill pending
+- Epic 2 remaining: idempotency, stale-quote reject, cancel/flatten, mock broker contract

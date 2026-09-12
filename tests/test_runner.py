@@ -73,6 +73,7 @@ def _patch_externals(monkeypatch):
     """Patch all external calls so tests never hit real APIs."""
     monkeypatch.setattr("core.runner.ibkr_list_positions", lambda client: [])
     monkeypatch.setattr("core.runner.ensure_connected", lambda ib: ib)
+    monkeypatch.setattr("core.runner.assert_paper_identity", lambda ib, **kw: None)
     monkeypatch.setattr("core.runner.should_strategy_run", lambda sessions, classes: True)
     monkeypatch.setattr(
         "core.runner._fetch_data_for_strategy",
@@ -157,7 +158,7 @@ class TestErrorHandling:
         monkeypatch.setattr("core.runner.count_daily_trades", lambda db, key: 0)
         monkeypatch.setattr("core.runner.get_account", lambda client: {"equity": "100000"})
         monkeypatch.setattr(
-            "core.runner.ibkr_create_order",
+            "core.runner.execute_intent",
             MagicMock(side_effect=RuntimeError("API down")),
         )
 
@@ -176,6 +177,19 @@ class TestMarketHoursGate:
 
         result = run_once(mock_deps, strategy=_make_strategy(), db_path=db_path, state_key="k1")
         assert result == 60
+
+
+class TestIdentityGate:
+    def test_identity_error_propagates(self, mock_deps, db_path, monkeypatch):
+        from core.identity import IdentityError
+        from core.runner import run_once
+
+        monkeypatch.setattr(
+            "core.runner.assert_paper_identity",
+            MagicMock(side_effect=IdentityError("live-looking account U1")),
+        )
+        with pytest.raises(IdentityError, match="live-looking"):
+            run_once(mock_deps, strategy=_make_strategy(), db_path=db_path, state_key="k1")
 
 
 class TestTotalExposureLimit:

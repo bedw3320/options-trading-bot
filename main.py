@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from tavily import TavilyClient
 
 from core.agent import configure_model
+from core.identity import IdentityError
 from core.runner import run_once
 from core.strategy_loader import load as load_strategy
 from integrations.ibkr.client import create_ib_client, disconnect
@@ -83,6 +84,10 @@ def main():
                     db_path=DB_PATH,
                     state_key=state_key,
                 )
+            except IdentityError as e:
+                print(f"FAIL identity: {e}")
+                disconnect()
+                sys.exit(1)
             except Exception as e:
                 print("Loop error:", repr(e))
                 sleep_s = 30

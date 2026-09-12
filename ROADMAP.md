@@ -116,13 +116,13 @@ bypassing risk.
 
 ### Scope
 
-- [ ] Remove `create_order` and `close_position` tools from reasoning agents
-- [ ] Introduce one `GuardedBroker` execution boundary
+- [ ] Remove `create_order` and `close_position` tools from reasoning agents (refuse-only stubs; they cannot place)
+- [x] Introduce one `GuardedBroker` execution boundary
 - [ ] Add a mock broker with the same contract as IBKR
-- [ ] Implement preview → single-use token → revalidate → place
-- [ ] Verify account id and paper/live status before every send
+- [x] Implement preview → single-use token → revalidate → place
+- [x] Verify account id and paper/live status before every send
 - [ ] Add idempotency keys and duplicate-order prevention
-- [ ] Reject stale quotes and expired previews
+- [ ] Reject stale quotes and expired previews (expired tokens: yes; stale quotes: no)
 - [ ] Reconcile open orders, fills, and positions
 - [ ] Add cancel and flatten controls
 

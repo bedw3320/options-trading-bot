@@ -10,12 +10,14 @@ from integrations.ibkr.account import get_account as ibkr_get_account
 from integrations.ibkr.assets import list_crypto_assets as ibkr_list_crypto_assets
 from integrations.ibkr.market_data import get_crypto_bars, get_stock_bars, get_stock_quote
 from integrations.ibkr.options_data import get_options_chain as ibkr_get_options_chain
-from integrations.ibkr.orders import create_order as ibkr_create_order
-from integrations.ibkr.positions import close_position as ibkr_close_position
 from integrations.ibkr.positions import list_positions as ibkr_list_positions
 from integrations.tavily.search import web_search as tavily_web_search
 from schemas.deps import Deps
 from schemas.output import AgentResult
+
+_AGENT_PLACE_REJECTED = (
+    "Guarded mode: propose OrderIntent only; the runner places via GuardedBroker."
+)
 
 agent = Agent(
     TestModel(),
@@ -27,8 +29,9 @@ agent = Agent(
         - Always include real URLs in `sources` when you used `web_search`.
         - Always output `confidence` in [0,1].
         - Always set `next_action` and `sleep_seconds`.
-        - If you propose a trade, populate `order`.
-        - Only call `create_order` or `close_position` if allow_trading=True.
+        - If you propose a trade, populate `order` (OrderIntent). Do not expect
+          tools to place at the broker — the runner places via GuardedBroker.
+        - `create_order` and `close_position` tools are disabled in guarded mode.
         - If confidence < threshold, prefer next_action='wait' or 'noop' (no trade).
         - For options trades, include contract_symbol, option_type, strike, and dte in the order."""
     ),
@@ -90,17 +93,7 @@ def create_order(
 ) -> dict[str, Any]:
     if not ctx.deps.allow_trading:
         return {"ok": False, "reason": "Trading disabled (allow_trading=False)."}
-
-    result = ibkr_create_order(
-        ctx.deps.ib,
-        symbol=symbol,
-        notional=notional,
-        side=side,
-        time_in_force=time_in_force,
-        order_type="market",
-        contract_symbol=contract_symbol,
-    )
-    return {"ok": True, "order": result}
+    return {"ok": False, "reason": _AGENT_PLACE_REJECTED}
 
 
 @agent.tool
@@ -112,14 +105,7 @@ def close_position(
 ) -> dict[str, Any]:
     if not ctx.deps.allow_trading:
         return {"ok": False, "reason": "Trading disabled (allow_trading=False)."}
-
-    order = ibkr_close_position(
-        ctx.deps.ib,
-        symbol_or_asset_id=symbol_or_asset_id,
-        qty=qty,
-        percentage=percentage,
-    )
-    return {"ok": True, "order": order}
+    return {"ok": False, "reason": _AGENT_PLACE_REJECTED}
 
 
 @agent.tool

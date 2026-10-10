@@ -11,6 +11,7 @@ from core.prompt_builder import build_strategy_prompt
 from integrations.ibkr.account import get_account
 from integrations.ibkr.client import ensure_connected
 from integrations.ibkr.market_data import get_crypto_bars, get_stock_bars
+from integrations.ibkr.orders import fills_for_order
 from integrations.ibkr.orders import get_order as ibkr_get_order
 from integrations.ibkr.positions import list_positions as ibkr_list_positions
 from integrations.data.news import aggregate_news
@@ -22,7 +23,7 @@ from schemas.deps import Deps
 from schemas.output import OrderIntent
 from schemas.strategy import StrategyConfig
 from utils.logging import get_logger
-from utils.state import append_event, count_daily_trades, load_state, save_state
+from utils.state import append_event, count_daily_trades, load_state, record_fills, save_state
 
 log = get_logger(__name__)
 
@@ -230,6 +231,16 @@ def reconcile_order_and_positions(
     }
 
     state["positions"] = snapshot_positions(deps)
+
+    raw_fills = order.get("fills") if isinstance(order, dict) else None
+    fills = raw_fills if isinstance(raw_fills, list) else []
+    if not fills:
+        fills = fills_for_order(deps.ib, order_id)
+    if fills:
+        state["orders"][order_id]["fills"] = fills
+        state["orders"][order_id]["filled_at"] = fills[-1].get("time_et")
+        record_fills(db_path, state_key, fills)
+
     save_state(db_path, state_key, state)
 
     append_event(

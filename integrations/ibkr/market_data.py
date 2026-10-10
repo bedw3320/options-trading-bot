@@ -8,6 +8,7 @@ from typing import Any
 import pandas as pd
 from ib_insync import IB, Stock, Crypto
 
+from integrations.ibkr.option_quotes import request_quote
 from utils.logging import get_logger
 
 log = get_logger(__name__)
@@ -131,19 +132,20 @@ def get_crypto_bars(
 
 
 def get_stock_quote(ib: IB, symbol: str) -> dict[str, Any]:
-    """Get the latest quote for a stock."""
+    """Get the latest quote for a stock (streaming; no snapshot)."""
     contract = Stock(symbol, "SMART", "USD")
     ib.qualifyContracts(contract)
-
-    ticker = ib.reqMktData(contract, snapshot=True)
-    ib.sleep(2)
-    ib.cancelMktData(contract)
+    quote = request_quote(ib, contract, require_bid_ask=True, require_greeks=False)
 
     return {
         "symbol": symbol,
-        "ask_price": float(ticker.ask) if ticker.ask and ticker.ask > 0 else None,
-        "bid_price": float(ticker.bid) if ticker.bid and ticker.bid > 0 else None,
-        "ask_size": float(ticker.askSize) if ticker.askSize else None,
-        "bid_size": float(ticker.bidSize) if ticker.bidSize else None,
+        "ask_price": quote.ask,
+        "bid_price": quote.bid,
+        "ask_size": quote.ask_size,
+        "bid_size": quote.bid_size,
         "timestamp": None,
+        "last": quote.last,
+        "market_data_type": quote.market_data_type,
+        "status": quote.status,
+        "errors": [e.model_dump() for e in quote.errors],
     }

@@ -23,36 +23,57 @@ def _require_env(name: str) -> str:
     return val
 
 
-def create_ib_client(trading_mode: str | None = None) -> IB:
+def create_ib_client(
+    trading_mode: str | None = None,
+    *,
+    client_id: int | None = None,
+    readonly: bool = False,
+) -> IB:
     """Create and connect an ib_insync IB client.
 
-    Uses a module-level singleton. IB connections are stateful and
-    expensive; IB enforces a max of 32 per account.
+    Trading connections use a module-level singleton (IB max 32 per account).
+    Readonly / explicit client_id connections are not stored as that singleton.
 
     Args:
         trading_mode: "paper" or "live". Defaults to TRADING_MODE env var or "paper".
+        client_id: Override IB_CLIENT_ID (default 1).
+        readonly: Connect with readonly=True (data / probe; cannot place).
     """
     global _ib, _conn_params
 
     mode = (trading_mode or os.environ.get("TRADING_MODE", "paper")).lower().strip()
     host = os.environ.get("IB_GATEWAY_HOST", "127.0.0.1")
     port = int(os.environ.get("IB_GATEWAY_PORT", "4002" if mode == "paper" else "4001"))
-    client_id = int(os.environ.get("IB_CLIENT_ID", "1"))
+    cid = int(os.environ.get("IB_CLIENT_ID", "1") if client_id is None else client_id)
 
-    _conn_params = {"host": host, "port": port, "clientId": client_id}
+    params = {"host": host, "port": port, "clientId": cid, "readonly": readonly}
 
-    if _ib is not None and _ib.isConnected():
+    if (
+        not readonly
+        and _ib is not None
+        and _ib.isConnected()
+        and _conn_params == params
+    ):
         return _ib
 
     ib = IB()
-    log.info("Connecting to IB Gateway at %s:%d (mode=%s, clientId=%d)", host, port, mode, client_id)
-    ib.connect(host, port, clientId=client_id)
+    log.info(
+        "Connecting to IB Gateway at %s:%d (mode=%s, clientId=%d, readonly=%s)",
+        host,
+        port,
+        mode,
+        cid,
+        readonly,
+    )
+    ib.connect(host, port, clientId=cid, readonly=readonly)
     log.info("Connected to IB Gateway")
     # TRADING_MODE/port are not identity. Call core.identity.assert_paper_identity
     # before any place path (runner / GuardedBroker / paper_readiness).
 
-    _ib = ib
-    return _ib
+    if not readonly and (_ib is None or not _ib.isConnected()):
+        _ib = ib
+        _conn_params = params
+    return ib
 
 
 def ensure_connected(ib: IB) -> IB:

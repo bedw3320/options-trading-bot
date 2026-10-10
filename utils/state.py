@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from utils.time_et import format_time_et
+
 DEFAULT_STATE: dict[str, Any] = {"orders": {}, "positions": {}, "meta": {}}
 
 
@@ -110,6 +112,21 @@ def append_event(
             """,
             (state_key, now, event_type, payload_json),
         )
+
+
+def record_fills(
+    db_path: str,
+    state_key: str,
+    fills: list[dict[str, Any]],
+) -> None:
+    """Append fill events. IB times are UTC; payload always includes time_et."""
+    for fill in fills:
+        payload = dict(fill)
+        if not payload.get("time_et"):
+            payload["time_et"] = format_time_et(
+                payload.get("time") or payload.get("time_utc")
+            )
+        append_event(db_path, state_key, "fill", payload)
 
 
 def count_daily_trades(db_path: str, state_key: str) -> int:

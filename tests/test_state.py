@@ -15,6 +15,7 @@ from utils.state import (
     count_daily_trades,
     ensure_tables,
     load_state,
+    record_fills,
     save_state,
 )
 
@@ -81,6 +82,27 @@ class TestAppendEvent:
         ).fetchall()
         conn.close()
         assert [r[0] for r in rows] == ["cycle_start", "agent_output"]
+
+
+class TestRecordFills:
+    def test_persists_time_et_from_utc(self, db_path):
+        record_fills(
+            db_path,
+            "k1",
+            [{"exec_id": "e1", "time": "20261006 13:35:19", "price": 778.25}],
+        )
+        import sqlite3
+
+        conn = sqlite3.connect(db_path)
+        row = conn.execute(
+            "SELECT event_type, payload_json FROM agent_events WHERE state_key = ?",
+            ("k1",),
+        ).fetchone()
+        conn.close()
+        assert row[0] == "fill"
+        payload = json.loads(row[1])
+        assert payload["time_et"].startswith("2026-10-06T09:35:19")
+        assert payload["exec_id"] == "e1"
 
 
 class TestCountDailyTrades:

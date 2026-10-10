@@ -2,24 +2,71 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any, Literal
 
 from ib_insync import IB, LimitOrder, MarketOrder, Stock, Crypto, Option, Trade
 
+from integrations.ibkr.occ import option_from_occ, parse_occ_symbol
+from integrations.ibkr.option_quotes import resolve_order_price, ticker_ready_for_order, wait_until
 from utils.logging import get_logger
+from utils.time_et import format_time_et, ib_exec_time_to_et
 
 log = get_logger(__name__)
+
+
+def fill_to_record(fill: Any) -> dict[str, Any]:
+    """IB execution.time is UTC; persist time_et."""
+    exe = getattr(fill, "execution", None)
+    raw_time = getattr(exe, "time", None) if exe is not None else None
+    if raw_time is None:
+        raw_time = getattr(fill, "time", None)
+    et = ib_exec_time_to_et(raw_time)
+    contract = getattr(fill, "contract", None)
+    return {
+        "exec_id": getattr(exe, "execId", None) if exe is not None else None,
+        "order_id": str(getattr(exe, "orderId", "") or "") if exe is not None else None,
+        "symbol": getattr(contract, "symbol", None),
+        "side": getattr(exe, "side", None) if exe is not None else None,
+        "shares": getattr(exe, "shares", None) if exe is not None else None,
+        "price": getattr(exe, "price", None) if exe is not None else None,
+        "exchange": getattr(exe, "exchange", None) if exe is not None else None,
+        "time_et": et.isoformat() if et else format_time_et(raw_time),
+    }
+
+
+def fills_for_order(ib: IB, order_id: str) -> list[dict[str, Any]]:
+    getter = getattr(ib, "fills", None)
+    raw = getter() if callable(getter) else []
+    if not isinstance(raw, (list, tuple)):
+        return []
+    target = str(order_id)
+    out: list[dict[str, Any]] = []
+    for fill in raw:
+        rec = fill_to_record(fill)
+        if rec.get("order_id") == target:
+            out.append(rec)
+    return out
+
+
+def _fills_from_trade(trade: Trade) -> list[dict[str, Any]]:
+    raw = getattr(trade, "fills", None) or []
+    if not isinstance(raw, (list, tuple)):
+        return []
+    return [fill_to_record(f) for f in raw]
 
 
 def _trade_to_dict(trade: Trade) -> dict[str, Any]:
     o = trade.order
     st = trade.orderStatus
+    fills = _fills_from_trade(trade)
+    filled_at = fills[-1]["time_et"] if fills else None
     return {
         "id": str(o.orderId),
         "client_order_id": str(o.orderId),
         "created_at": None,
         "updated_at": None,
-        "filled_at": None,
+        "filled_at": filled_at,
         "symbol": trade.contract.symbol,
         "side": o.action.lower() if o.action else None,
         "type": o.orderType.lower() if o.orderType else None,
@@ -29,33 +76,27 @@ def _trade_to_dict(trade: Trade) -> dict[str, Any]:
         "filled_qty": str(st.filled) if st else None,
         "filled_avg_price": str(st.avgFillPrice) if st and st.avgFillPrice else None,
         "status": st.status if st else None,
+        "fills": fills,
     }
 
 
 def _build_contract(symbol: str, contract_symbol: str | None = None):
     """Build the appropriate IB contract object.
 
-    If contract_symbol is provided, treat as options OCC symbol.
+    If contract_symbol is provided, treat as options OCC symbol (yymmdd).
     Otherwise, detect crypto vs equity by symbol format.
     """
     if contract_symbol:
-        # Parse OCC-style option symbol
-        # OCC format: "AAPL  240315C00150000" — 6-char padded underlying, YYMMDD, C/P, 8-digit strike
-        import re
-        m = re.match(r'^(.{1,6})\s*(\d{6})([CP])(\d{8})$', contract_symbol.strip())
-        if m:
-            underlying = m.group(1).strip()
-            date_str = m.group(2)
-            right = m.group(3)
-            strike = int(m.group(4)) / 1000.0
-            expiry = "20" + date_str
-            return Option(underlying, expiry, strike, right, "SMART")
-        # Fallback: treat contract_symbol as localSymbol
-        opt = Option()
-        opt.localSymbol = contract_symbol
-        return opt
+        try:
+            parts = parse_occ_symbol(contract_symbol)
+            return option_from_occ(parts.occ_symbol, trading_class=parts.underlying)
+        except ValueError:
+            opt = Option()
+            opt.localSymbol = contract_symbol
+            opt.exchange = "SMART"
+            opt.currency = "USD"
+            return opt
 
-    # Crypto symbols contain "/" (e.g., "BTC/USD") or common crypto tickers
     if "/" in symbol:
         parts = symbol.split("/")
         return Crypto(parts[0], "PAXOS", parts[1] if len(parts) > 1 else "USD")
@@ -74,29 +115,38 @@ def create_order(
     limit_price: float | None = None,
     stop_price: float | None = None,
     contract_symbol: str | None = None,
+    quote_timeout: float = 10.0,
 ) -> dict[str, Any]:
     """Create an order via ib_insync.
 
     IB uses qty-based orders, so we convert notional to qty by fetching
-    the current price first.
+    the current price first. Options fail closed unless bid/ask are finite.
     """
     if notional <= 0:
         raise ValueError("notional must be > 0")
 
     contract = _build_contract(symbol, contract_symbol)
     ib.qualifyContracts(contract)
+    is_option = (getattr(contract, "secType", "") or "").upper() == "OPT"
 
-    # Fetch current price to convert notional -> qty
-    ticker = ib.reqMktData(contract, snapshot=True)
-    ib.sleep(2)  # wait for snapshot data
-    price = ticker.last if ticker.last and ticker.last > 0 else ticker.close
-    if not price or price <= 0:
-        # Fallback: try midpoint of bid/ask
-        if ticker.bid and ticker.ask and ticker.bid > 0:
-            price = (ticker.bid + ticker.ask) / 2
-        else:
-            raise ValueError(f"Cannot determine price for {symbol} to convert notional to qty")
-    ib.cancelMktData(contract)
+    # Stream — generic ticks are not used (and are illegal with snapshot=True).
+    ticker = ib.reqMktData(contract, "", False, False)
+    try:
+        wait_until(
+            lambda: ticker_ready_for_order(ticker, is_option=is_option),
+            timeout=quote_timeout,
+            sleep=ib.sleep,
+            clock=time.monotonic,
+        )
+        try:
+            price = resolve_order_price(ticker, is_option=is_option)
+        except ValueError as exc:
+            raise ValueError(f"Cannot determine price for {symbol} to convert notional to qty") from exc
+    finally:
+        try:
+            ib.cancelMktData(contract)
+        except Exception:
+            pass
 
     # For options: price is per-share, multiplier is 100, so cost per contract = price * 100
     # For stocks/crypto: multiplier is 1, so cost per unit = price

@@ -66,7 +66,7 @@ Cursor Cloud must not hold TWS passwords and must not place orders. IBKR’s pub
 - Runner enforces `max_daily_trades`, `max_position_pct`, `max_total_exposure_pct` in **code** (`core/runner.py`)
 - Confidence threshold (default 0.75) skips the trade
 - Append-only SQLite event log (`utils/state.py`)
-- `docker-compose.yml`: `ib-gateway` + `agent`, Gateway healthcheck before the agent starts
+- `docker-compose.yml`: `ib-gateway` + `agent` (opt-in `bot` profile), Gateway healthcheck (bash /dev/tcp on the socat port) before the agent starts
 
 ## Cycle (target)
 

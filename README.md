@@ -41,8 +41,11 @@ uv sync
 cp .env.example .env
 # TWS_USERID / TWS_PASSWORD, ANTHROPIC_API_KEY, TRADING_MODE=paper
 
-# Gateway + agent (paper port 4002)
-docker compose up
+# Gateway only (paper, host 127.0.0.1:4002; settings persist in ./tws_settings)
+docker compose up -d ib-gateway
+
+# Gateway + agent loop (agent is opt-in via the "bot" profile)
+docker compose --profile bot up -d
 
 # Or Gateway already running on the Mini:
 TRADING_MODE=paper uv run python main.py --strategy strategies/examples/sol-momentum.yaml
@@ -57,7 +60,7 @@ Without `--allow-trading`, the loop researches and journals. It does not send.
 
 ## What’s in the box
 
-**IBKR execution** — `ib_insync` wrappers under `integrations/ibkr/`. Docker image `gnzsnz/ib-gateway` in `docker-compose.yml` (paper **4002**, live **4001**).
+**IBKR execution** — `ib_insync` wrappers under `integrations/ibkr/`. Docker image `gnzsnz/ib-gateway` in `docker-compose.yml` (paper **4002**, live **4001**, both bound to host loopback only).
 
 **Strategy system** — YAML validated by Pydantic. Conditions are descriptive strings. Schema mistakes fail before they cost money.
 

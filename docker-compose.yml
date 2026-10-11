@@ -6,26 +6,48 @@ services:
       TWS_USERID: ${TWS_USERID}
       TWS_PASSWORD: ${TWS_PASSWORD}
       TRADING_MODE: ${TRADING_MODE:-paper}
-      TWS_ACCEPT_INCOMING: "accept"
+      # API clients reach the Gateway through the image's socat forwarder, so
+      # they connect from 127.0.0.1 (TrustedIPs in jts.ini). Anything else that
+      # hits the Gateway's API port directly is rejected instead of auto-accepted.
+      TWS_ACCEPT_INCOMING: "reject"
       READ_ONLY_API: "no"
+      # Take over if IBKR reports an existing session for this (paper) login.
+      EXISTING_SESSION_DETECTED_ACTION: "primary"
+      # TIME_ZONE is only written into jts.ini on first run (empty settings dir).
+      TIME_ZONE: "America/Toronto"
+      TZ: "America/Toronto"
+      # Persist Gateway/IBC settings across restarts and recreates.
+      TWS_SETTINGS_PATH: /home/ibgateway/tws_settings
     ports:
+      # Host loopback only; never exposed to the LAN.
       # gnzsnz: host paper 4002 -> container socat 4004 -> Gateway 4002
       #         host live 4001 -> container socat 4003 -> Gateway 4001
-      - "4001:4003"
-      - "4002:4004"
+      - "127.0.0.1:4001:4003"
+      - "127.0.0.1:4002:4004"
     volumes:
-      - ib-gateway-data:/root/Jts
+      # Bind dir (gitignored) so settings survive container recreation.
+      - ./tws_settings:/home/ibgateway/tws_settings
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "4004"]
+      # The image has no nc; use bash's /dev/tcp against the socat port the
+      # bot connects to (4004 paper, 4003 live).
+      test:
+        - "CMD"
+        - "bash"
+        - "-c"
+        - "if [ \"$$TRADING_MODE\" = live ]; then p=4003; else p=4004; fi; exec 3<>/dev/tcp/127.0.0.1/$$p"
       interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 60s
+      start_period: 90s
 
   agent:
     build: .
     container_name: trading-agent
+    # Opt-in only: `docker compose --profile bot up -d`. Keeps a plain
+    # `docker compose up -d` from launching the trading loop now that the
+    # gateway healthcheck actually passes.
+    profiles: ["bot"]
     env_file:
       - .env
     environment:
@@ -39,6 +61,3 @@ services:
       ib-gateway:
         condition: service_healthy
     restart: unless-stopped
-
-volumes:
-  ib-gateway-data:

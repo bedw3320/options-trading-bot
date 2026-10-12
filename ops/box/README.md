@@ -15,3 +15,11 @@ for IB Gateway + the bot, replacing the Mac Mini (whose Grok Bot app kept going 
 
 Caveat: if the box restarts, cron itself must be running for `@reboot` to fire; if it isn't,
 any agent can run `sudo service cron start && ops/box/watchdog.sh`.
+
+## Blocker found 2026-10-12
+The box's network only lets outbound traffic through a proxy (every hostname resolves to
+198.18.0.1). Port 443 connects, but IBKR's login servers on port 4000/4001
+(`ndc1/cdc1/gdc1.ibllc.com`) can't be reached, so the Gateway sits at "Connecting to server"
+and never logs in. Also tried `LocalServerPort=443` in jts.ini: same result. The watchdog cron
+is paused until this is solved (need direct TCP to IBKR on 4000/4001, or another host such as a VPS).
+Also: the bind dir must belong to uid 1000 (`sudo chown 1000:1000 tws_settings`) or the container crash-loops.

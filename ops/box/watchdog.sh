@@ -7,6 +7,7 @@ REPO="${REPO:-/home/box/options-trading-bot}"
 LOG="${LOG:-/home/box/ib-watchdog.log}"
 PORT="${IB_PORT:-4002}"
 cd "$REPO" || exit 1
+[ -d tws_settings ] || { mkdir -p tws_settings; }; sudo chown 1000:1000 tws_settings
 log(){ echo "$(date '+%F %T %Z') $*" >>"$LOG"; }
 exec 9>/tmp/ib-watchdog.lock; flock -n 9 || exit 0
 
@@ -15,7 +16,7 @@ if ! sudo docker info >/dev/null 2>&1; then
 fi
 if [ ! -f .env ] || ! grep -q '^TWS_USERID=.' .env; then log "no .env/TWS_USERID; not starting gateway"; exit 0; fi
 
-state=$(sudo docker inspect -f '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{end}}' ib-gateway 2>/dev/null || echo missing)
+state=$(sudo docker inspect -f '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{end}}' ib-gateway 2>/dev/null) || state=missing
 case "$state" in
   missing*|exited*|created*|dead*) log "gateway $state; compose up"; sudo docker-compose up -d ib-gateway >>"$LOG" 2>&1; exit 0;;
   *starting*) exit 0;;

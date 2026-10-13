@@ -3,7 +3,6 @@
 # (managedAccounts must contain $EXPECTED_ACCOUNT). Writes status.json for heartbeat.sh.
 source "$(dirname "$0")/common.sh"
 cd "$REPO" || exit 1
-exec 9>/tmp/otb-watchdog.lock; /usr/bin/lockf -t 0 9 2>/dev/null || true
 write_status(){ # logged_in account error
   printf '{"host":"%s","gateway_logged_in":%s,"account":"%s","expected_account":"%s","last_check":"%s","last_error":"%s"}\n' \
     "$(hostname -s)" "$1" "$2" "$EXPECTED_ACCOUNT" "$(date -u +%FT%TZ)" "$(echo "$3" | tr '"\n' "' " | cut -c1-300)" >"$STATUS"
@@ -21,7 +20,7 @@ if ! nc -z -G 5 127.0.0.1 4002 >/dev/null 2>&1; then
   log wd "port 4002 dead; restart"; docker restart ib-gateway >>"$LOG" 2>&1
   write_status false "" "port 4002 dead; restarted"; exit 0
 fi
-out=$(IB_GATEWAY_HOST=127.0.0.1 IB_GATEWAY_PORT=4002 timeout 40 uv run --quiet python - 2>&1 <<'PY'
+out=$(IB_GATEWAY_HOST=127.0.0.1 IB_GATEWAY_PORT=4002 perl -e 'alarm 40; exec @ARGV' uv run --quiet python - 2>&1 <<'PY'
 import os
 from ib_insync import IB
 ib = IB()

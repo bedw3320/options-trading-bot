@@ -27,11 +27,11 @@ mk com.otb.watchdog  watchdog.sh  '<key>RunAtLoad</key><true/><key>StartInterval
 mk com.otb.heartbeat heartbeat.sh '<key>RunAtLoad</key><true/><key>StartInterval</key><integer>600</integer>'
 
 # Power: never sleep, restart after power loss, wake on network. Needs sudo (asks once).
-if sudo -v; then
+if sudo -n true 2>/dev/null || { [ -t 0 ] && sudo -v; }; then
   sudo pmset -a sleep 0 disksleep 0 displaysleep 10 autorestart 1 womp 1 powernap 0 || true
   sudo pmset -a tcpkeepalive 1 2>/dev/null || true
   echo "pmset applied:"; pmset -g | grep -E ' sleep|autorestart|womp' || true
-fi
+else echo "MANUAL: run: sudo pmset -a sleep 0 disksleep 0 autorestart 1 womp 1 powernap 0"; fi
 # Colima should come back too (start.sh also does this); brew service is optional.
 command -v brew >/dev/null && brew services list 2>/dev/null | grep -q colima || true
 

@@ -1,6 +1,12 @@
-# Box runtime (primary)
+# Box runtime: NOT VIABLE
 
-As of 2026-10-12 the Grok Bot box (Debian 13, always on) is the primary runtime
+**The box is not a viable runtime for IB Gateway.** Its egress only allows proxied traffic (443 works);
+IBKR login ports 4000/4001 are blocked, so the Gateway never logs in. The Mac Mini is the runtime
+(see `ops/mini/`). The box cron watchdog lines were removed on 2026-10-12. Notes below are kept for history.
+
+## Original plan (superseded)
+
+The plan was for the Grok Bot box (Debian 13, always on) is the primary runtime
 for IB Gateway + the bot, replacing the Mac Mini (whose Grok Bot app kept going offline).
 
 - Repo: `/home/box/options-trading-bot`

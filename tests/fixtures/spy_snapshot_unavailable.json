@@ -1,0 +1,13 @@
+{
+ "as_of": "2026-10-19T15:00:00+00:00",
+ "source": "fixture",
+ "underlying": "SPY",
+ "status": "unavailable",
+ "reason": "ib_10197_competing_live_session",
+ "errors": [
+  {
+   "code": 10197,
+   "message": "No market data during competing live session"
+  }
+ ]
+}

@@ -79,15 +79,15 @@ None. Use the existing `ib_insync` integration.
 
 ### Scope
 
-- [ ] Add a run-once entry point
-- [ ] Limit the first slice to one instrument and one deterministic signal
-- [ ] Capture a timestamped market snapshot
-- [ ] Let the agent research and return a typed trade or abstention
-- [ ] Apply deterministic risk checks
-- [ ] Place a paper order when approved
-- [ ] Reconcile the result and stop
-- [ ] Preserve minimal lineage: cycle, evidence, decision, intent, order, fill
-- [ ] Log abstention as a first-class outcome
+- [x] Add a run-once entry point
+- [x] Limit the first slice to one instrument and one deterministic signal
+- [x] Capture a timestamped market snapshot
+- [ ] Let the agent research and return a typed trade or abstention (v0 is deterministic; agent not in path)
+- [x] Apply deterministic risk checks
+- [x] Place a paper order when approved
+- [x] Reconcile the result and stop
+- [x] Preserve minimal lineage: cycle, evidence, decision, intent, order, fill
+- [x] Log abstention as a first-class outcome
 
 ### Acceptance criteria
 
@@ -118,12 +118,12 @@ bypassing risk.
 
 - [ ] Remove `create_order` and `close_position` tools from reasoning agents (refuse-only stubs; they cannot place)
 - [x] Introduce one `GuardedBroker` execution boundary
-- [ ] Add a mock broker with the same contract as IBKR
+- [x] Add a mock broker with the same contract as IBKR
 - [x] Implement preview → single-use token → revalidate → place
 - [x] Verify account id and paper/live status before every send
-- [ ] Add idempotency keys and duplicate-order prevention
+- [x] Add idempotency keys and duplicate-order prevention
 - [ ] Reject stale quotes and expired previews (expired tokens: yes; stale quotes: no)
-- [ ] Reconcile open orders, fills, and positions
+- [x] Reconcile open orders, fills, and positions
 - [ ] Add cancel and flatten controls
 
 ### Acceptance criteria
@@ -150,10 +150,10 @@ implementations only when defining `GuardedBroker`.
 
 - [ ] Add an explicit paper-autonomy arm
 - [ ] Add market-hours scheduling
-- [ ] Prevent overlapping cycles with a process lock
+- [x] Prevent overlapping cycles with a process lock
 - [ ] Classify retryable and terminal failures
 - [ ] Reconnect the Gateway and reconcile before resuming
-- [ ] Add a latching kill switch
+- [x] Add a latching kill switch
 - [ ] Recover from restart without duplicate orders
 - [ ] Emit heartbeat and daily summary events
 - [ ] Install the runtime as a local Mini service

@@ -58,6 +58,18 @@ uv run python -m core.paper_readiness
 
 Without `--allow-trading`, the loop researches and journals. It does not send.
 
+## Deterministic cycle (v0)
+
+`strategies/active/spy-defined-risk-rr.yaml` runs through `core/cycle.py` with no LLM in the decision path:
+reconcile → snapshot → signals → decision → guarded BAG order → fill → reconcile, all under one `cycle_id` in SQLite.
+
+```bash
+uv run python -m core.cli run --dry-run      # full cycle on synthetic fixtures, no IB
+uv run python -m core.cli explain last       # why it traded or abstained
+```
+
+See [`knowledge/ops/deterministic-cycle.md`](knowledge/ops/deterministic-cycle.md).
+
 ## What’s in the box
 
 **IBKR execution** — `ib_insync` wrappers under `integrations/ibkr/`. Docker image `gnzsnz/ib-gateway` in `docker-compose.yml` (paper **4002**, live **4001**, both bound to host loopback only).

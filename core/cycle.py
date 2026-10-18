@@ -149,7 +149,7 @@ def run_cycle(
         snap = provider.snapshot(rules, held_legs=held_legs)
         lineage.record(cid, "market_snapshot", snap.model_dump(mode="json"))
         if snap.status != "ok":
-            extra = [" open position: exits not evaluable this cycle"] if positions else []
+            extra = ["open position: exits not evaluable this cycle"] if positions else []
             return abstain([f"market_data_unavailable: {snap.reason}"] + extra)
 
         # 6a. Manage the open position (max one).

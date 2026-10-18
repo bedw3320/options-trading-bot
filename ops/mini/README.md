@@ -25,3 +25,13 @@ Manual prerequisites (can't be scripted safely):
   Without it, after a reboot nothing runs until someone logs in.
 - `gh auth login` done on the Mini (the heartbeat uses it), and `uv` installed (`uv sync` once in the repo).
 - `.env` with TWS_USERID / TWS_PASSWORD present in the repo root (gitignored).
+
+## Deterministic strategy cycle
+
+From `~/options-trading-bot` on the Mini (see `knowledge/ops/deterministic-cycle.md`):
+
+    git pull && uv sync
+    uv run python -m core.cli run --dry-run && uv run python -m core.cli explain last   # no IB
+    TRADING_MODE=paper IB_GATEWAY_HOST=127.0.0.1 IB_GATEWAY_PORT=4002 uv run python -m core.cli run   # paper, journal only
+
+Not scheduled by launchd yet; until IB option data works every paper cycle abstains (10197).

@@ -13,6 +13,7 @@ from typing import Any
 from core.identity import assert_paper_identity
 from integrations.ibkr.orders import create_order as ibkr_create_order
 from integrations.ibkr.positions import close_position as ibkr_close_position
+from schemas.cycle import ComboIntent
 from schemas.output import OrderIntent
 
 TOKEN_TTL_SECONDS = 60.0
@@ -135,6 +136,31 @@ class GuardedBroker:
             order_type="market",
             contract_symbol=intent.contract_symbol,
         )
+
+    # --- multi-leg (BAG) -------------------------------------------------
+    def preview_combo(self, intent: ComboIntent) -> Preview:
+        self._assert_ready()
+        if intent.quantity != 1:
+            raise GuardedReject("combo quantity must be 1 in v0")
+        return self._issue({"action": "combo", **intent.model_dump(mode="json")})
+
+    def confirm_combo(
+        self,
+        token: str,
+        intent: ComboIntent,
+        *,
+        revalidate: Callable[[ComboIntent], None] | None = None,
+        place_fn: Callable[[Any, ComboIntent], dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        self._consume(token, {"action": "combo", **intent.model_dump(mode="json")})
+        self._assert_ready()
+        if revalidate is not None:
+            revalidate(intent)
+        if place_fn is not None:
+            return place_fn(self._ib, intent)
+        from integrations.ibkr.combo import place_combo
+
+        return place_combo(self._ib, intent)
 
     def close(
         self,

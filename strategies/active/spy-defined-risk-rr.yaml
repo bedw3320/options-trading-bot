@@ -1,0 +1,120 @@
+# SPY defined-risk risk reversal, v0 (paper only).
+# Source: knowledge/archive/research_v0_ Options Risk Reversal Strategy.md and
+# knowledge/ops/burry-options-expert-brief.md. US/SPY parameters only; EM is out of v0.
+# The `rules:` block is what executes (core/cycle.py, deterministic, no LLM).
+# entry/exit `conditions` below are the human-readable mirror of those rules.
+name: spy-defined-risk-rr
+version: "0.1.0"
+description: >
+  When SPY put skew is rich, sell a ~22-delta put, buy a put $20 lower as the wing,
+  and use the credit to buy an OTM call (~zero cost), 30-45 DTE, one combo, max loss
+  capped at $2,500. Paper only. Hypothesis to falsify (LOOP principle 6): after spreads
+  and stops, this does not beat holding SPY on a risk-adjusted basis.
+
+asset_universe:
+  asset_classes: [option]
+  tickers: [SPY]
+
+schedule:
+  frequency: "every 30 minutes during RTH (launchd/cron calls `core.cli run` once per tick)"
+  active_sessions: [market_hours]
+  timezone: "US/Eastern"
+
+data_requirements:
+  - source: ohlcv
+    params: {timeframe: "1D", bars: 25}
+  - source: options_flow
+    params: {greeks: model, expiries: 1, strike_step: 5}
+
+entry:
+  conditions:
+    - description: "25-delta risk reversal (call IV minus put IV) is -5 vol points or lower"
+      priority: 9
+    - description: "25-delta put IV / 25-delta call IV is at least 1.15"
+      priority: 8
+    - description: "ATM implied vol is above 20-day realized vol"
+      priority: 7
+    - description: "No FOMC decision within 3 calendar days"
+      priority: 6
+    - description: "rr25 percentile vs own history >= 75 (informational until 60 observations)"
+      priority: 4
+  min_conditions_met: 4
+  position_type: long
+
+exit:
+  conditions:
+    - description: "Time stop: 21 DTE or less remaining"
+      priority: 10
+    - description: "SPY at or below short put strike minus 3%"
+      priority: 10
+    - description: "Unrealized loss of $1,250 or more"
+      priority: 10
+    - description: "Unrealized profit of $1,000 or more"
+      priority: 8
+  min_conditions_met: 1
+
+risk:
+  max_position_pct: 1.0
+  max_total_exposure_pct: 5.0
+  max_daily_trades: 2
+  confidence_threshold: 0.75
+
+rules:
+  engine: defined_risk_risk_reversal_v0
+  underlying: SPY
+  signals:
+    target_abs_delta: 0.25
+    max_rr25: -0.05              # call IV - put IV, decimals
+    min_put_call_iv_ratio: 1.15
+    require_iv_over_rv: true
+    rv_lookback_days: 20
+    skew_percentile_min: 75
+    skew_percentile_required: false   # no history yet; flip after 60 stored cycles
+    skew_percentile_min_history: 60
+  structure:
+    dte_min: 30
+    dte_max: 45
+    dte_target: 38
+    short_put_delta_min: 0.20
+    short_put_delta_max: 0.25
+    short_put_delta_target: 0.225
+    long_call_delta_min: 0.10
+    long_call_delta_max: 0.30
+    wing_width: 20               # $; long put strike = short put strike - 20
+    max_net_debit: 0.50          # per share; credit is fine
+    strike_step: 5
+    max_spread_pct_of_mid: 10
+    min_open_interest: 500
+  sizing:
+    contracts: 1
+    max_loss_usd: 2500
+    max_open_positions: 1
+    max_entries_per_day: 1
+  exits:
+    time_stop_dte: 21
+    underlying_stop_pct_below_short_put: 3.0
+    take_profit_usd: 1000
+    stop_loss_usd: 1250
+  kill_switch:
+    daily_loss_limit_usd: 1500
+    max_consecutive_errors: 3
+    latch_on_reconcile_drift: true
+    latch_on_identity_failure: true
+  execution:
+    paper_only: true             # schema allows only true
+    required_account_prefix: DU
+    order_type: limit_mid
+    fill_wait_seconds: 30
+    cancel_unfilled: true
+    entry_window_et: ["10:00", "15:30"]
+    client_id: 11
+  events:
+    # FOMC decision days (federalreserve.gov 2026 calendar). Add CPI/NFP if wanted.
+    dates: ["2026-10-28", "2026-12-09", "2027-01-27"]
+    block_days_before: 3
+
+notes:
+  - "Deviation from vault: the vault blocks any event inside the DTE window; with FOMC every ~6 weeks that blocks 30-45 DTE SPY almost always, so v0 blocks entries 3 days before an event instead."
+  - "Deviation from vault: short put alone has large tail risk; v0 adds a $20-lower long put so max loss is defined and capped."
+  - "No rolls in v0: the 21-DTE review is a hard close."
+  - "Kill switch latches stop all cycle actions, including exits; clear with `core.cli rearm` after review."

@@ -356,3 +356,151 @@ def test_cli_dry_run_and_explain(tmp_path, capsys):
     assert cli_main(["--db", db, "run", "--dry-run", "--fixture", str(UNAVAIL)]) == 0
     assert cli_main(["--db", db, "list"]) == 0
     assert "market_data_unavailable" in capsys.readouterr().out
+
+
+# --- kill switch blocks entries, not risk-reducing exits ----------------------------------
+
+NAME = "spy-defined-risk-rr"
+
+
+def _kinds(lin, cid):
+    return [a for a in lin.get_cycle(cid)["artifacts"] if a["kind"] == "kill_switch"]
+
+
+def test_kill_latched_still_runs_rule_exit(lin):
+    assert dry(lin).outcome == "entered"
+    lin.latch_kill(NAME, "dry_run", "manual: test")
+    r = dry(lin, underlying_price=700.0)
+    assert r.outcome == "exited" and "underlying_stop" in r.reasons[0]
+    assert "exit ran while kill switch latched" in r.reasons
+    cyc = lin.get_cycle(r.cycle_id)
+    assert "exit ran while kill switch latched" in cyc["reasons"]
+    ks = _kinds(lin, r.cycle_id)
+    assert ks and ks[0]["payload"]["action"] == "exit_allowed_while_latched"
+    assert ks[0]["payload"]["trigger"] == "underlying_stop"
+    assert lin.open_positions(NAME, "dry_run") == []
+    assert lin.kill_state(NAME, "dry_run")  # still latched until rearm
+
+
+def test_kill_latched_holds_and_blocks_entries(lin):
+    assert dry(lin).outcome == "entered"
+    lin.latch_kill(NAME, "dry_run", "manual: test")
+    r = dry(lin)
+    assert r.outcome == "held" and any(x.startswith("kill_switch_latched") for x in r.reasons)
+    lin2 = Lineage(str(Path(lin.db_path).with_name("other.db")))
+    lin2.latch_kill(NAME, "dry_run", "manual: test")
+    r2 = dry(lin2)
+    assert r2.outcome == "abstained" and r2.reasons[1] == "new entries blocked"
+    assert lin2.orders_by_status(NAME, "dry_run", ("proposed", "submitted", "filled", "not_sent")) == []
+
+
+def test_daily_loss_latch_blocks_entry(lin):
+    lin.open_position(position_id="p-old", strategy=NAME, mode="dry_run", cycle_id="c0", legs=[],
+                      entry_price=0.5, quantity=1, max_loss_usd=2000)
+    lin.close_position("p-old", cycle_id="c0", exit_price=-16.0, trigger="stop_loss")  # -$1,650
+    r = dry(lin)
+    assert r.outcome == "abstained" and "new entries blocked" in r.reasons
+    assert "daily realized loss" in lin.kill_state(NAME, "dry_run")["reason"]
+
+
+def test_flatten_closes_position_even_when_latched(lin):
+    assert dry(lin).outcome == "entered"
+    lin.latch_kill(NAME, "dry_run", "manual: test")
+    seeded = expected_option_positions(lin.open_positions(NAME, "dry_run"))
+    r = run_cycle(STRAT, mode="dry_run", provider=FixtureMarketState(ENTRY), broker=SimBroker(seeded),
+                  lineage=lin, allow_trading=True, flatten=True)
+    assert r.outcome == "exited" and r.reasons[0].startswith("manual_flatten")
+    assert "exit ran while kill switch latched" in r.reasons
+    assert _kinds(lin, r.cycle_id)[0]["payload"]["trigger"] == "manual_flatten"
+    assert lin.open_positions(NAME, "dry_run") == []
+
+
+def test_flatten_without_position_abstains(lin):
+    r = run_cycle(STRAT, mode="dry_run", provider=FixtureMarketState(ENTRY), broker=SimBroker(),
+                  lineage=lin, allow_trading=True, flatten=True)
+    assert r.outcome == "abstained" and r.reasons[0] == "flatten: no open strategy position"
+    assert lin.open_positions(NAME, "dry_run") == []
+
+
+def test_exit_drift_still_blocks(lin):
+    assert dry(lin).outcome == "entered"
+    lin.latch_kill(NAME, "dry_run", "manual: test")
+    r = run_cycle(STRAT, mode="dry_run", provider=FixtureMarketState(ENTRY), broker=SimBroker({}),
+                  lineage=lin, allow_trading=True, flatten=True)
+    assert r.outcome == "abstained" and r.reasons[0] == "reconcile_drift"
+    assert len(lin.open_positions(NAME, "dry_run")) == 1
+
+
+def test_non_offsetting_close_rejected_by_revalidate(lin, monkeypatch):
+    import core.cycle as cyc_mod
+
+    assert dry(lin).outcome == "entered"
+    real = cyc_mod.build_exit
+
+    def tampered(*a, **k):
+        intent = real(*a, **k)
+        legs = [l.model_copy(update={"action": "SELL"}) for l in intent.legs]
+        return intent.model_copy(update={"legs": legs})
+
+    monkeypatch.setattr(cyc_mod, "build_exit", tampered)
+    seeded = expected_option_positions(lin.open_positions(NAME, "dry_run"))
+    r = run_cycle(STRAT, mode="dry_run", provider=FixtureMarketState(ENTRY), broker=SimBroker(seeded),
+                  lineage=lin, allow_trading=True, flatten=True)
+    assert r.outcome == "proposed_not_sent" and "not risk-reducing" in r.reasons[0]
+    assert len(lin.open_positions(NAME, "dry_run")) == 1
+
+
+class FakeIBHolding(FakeIB):
+    def __init__(self, legs, accounts=("DU123",)):
+        super().__init__(accounts)
+        self._legs = legs
+
+    def positions(self):
+        out = []
+        for l in self._legs:
+            c = SimpleNamespace(secType="OPT", symbol="SPY", lastTradeDateOrContractMonth=l["expiry"],
+                                right=l["right"], strike=l["strike"])
+            out.append(SimpleNamespace(contract=c, position=1.0 if l["action"] == "BUY" else -1.0))
+        return out
+
+
+def _paper_position(lin):
+    intent, _ = build_entry(snap(), load(STRAT).rules, strategy_name=NAME, idempotency_key="k")
+    legs = [l.model_dump(mode="json") for l in intent.legs]
+    lin.open_position(position_id="p-paper", strategy=NAME, mode="paper", cycle_id="c-x", legs=legs,
+                      entry_price=intent.limit_price, quantity=1, max_loss_usd=intent.max_loss_usd)
+    return legs
+
+
+def test_paper_flatten_latched_goes_through_guard(lin, monkeypatch):
+    monkeypatch.setenv("TRADING_MODE", "paper")
+    monkeypatch.delenv("IB_GATEWAY_PORT", raising=False)
+    legs = _paper_position(lin)
+    lin.latch_kill(NAME, "paper", "manual: test")
+    ib = FakeIBHolding(legs)
+    r = run_cycle(STRAT, mode="paper", provider=FixtureMarketState(ENTRY),
+                  broker=IBExecution(ib, allow_trading=False, expected_account_id="DU123"), lineage=lin,
+                  allow_trading=False, identity_check=lambda: "DU123", now=RTH_NOW, flatten=True)
+    # Exit was attempted while latched, but the GuardedBroker refused to send (trading disabled).
+    assert r.outcome == "proposed_not_sent" and "Trading disabled" in r.reasons[0]
+    assert "exit ran while kill switch latched" in r.reasons
+    assert _kinds(lin, r.cycle_id)[0]["payload"]["action"] == "exit_allowed_while_latched"
+
+
+def test_paper_flatten_live_account_refused(lin):
+    legs = _paper_position(lin)
+    lin.latch_kill(NAME, "paper", "manual: test")
+    r = run_cycle(STRAT, mode="paper", provider=FixtureMarketState(ENTRY),
+                  broker=IBExecution(FakeIBHolding(legs, ["U1"]), allow_trading=True, expected_account_id="U1"),
+                  lineage=lin, allow_trading=True, identity_check=lambda: "U1", now=RTH_NOW, flatten=True)
+    assert r.outcome == "error" and "identity_failure" in r.reasons[0]
+    assert len(lin.open_positions(NAME, "paper")) == 1
+
+
+def test_cli_flatten_dry_run(tmp_path, capsys):
+    db = str(tmp_path / "s.db")
+    assert cli_main(["--db", db, "run", "--dry-run"]) == 0
+    assert cli_main(["--db", db, "kill", "--mode", "dry_run", "--reason", "test"]) == 0
+    assert cli_main(["--db", db, "flatten", "--dry-run"]) == 0
+    out = capsys.readouterr().out
+    assert "exited" in out and "manual_flatten" in out and "exit ran while kill switch latched" in out

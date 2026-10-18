@@ -143,6 +143,11 @@ class Lineage:
                 (utc_now_iso(), outcome, _dumps(reasons), cycle_id),
             )
 
+    def annotate_reasons(self, cycle_id: str, reasons: list[str]) -> None:
+        """Replace the terminal reasons of an ended cycle (used to append audit notes)."""
+        with self._conn() as c:
+            c.execute("UPDATE cycles SET reasons_json=? WHERE cycle_id=?", (_dumps(reasons), cycle_id))
+
     def record(self, cycle_id: str, kind: str, payload: Any) -> None:
         with self._conn() as c:
             c.execute(

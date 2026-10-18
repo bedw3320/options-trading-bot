@@ -6,7 +6,9 @@
     uv run python -m core.cli explain last                  # why it traded / abstained
     uv run python -m core.cli list
     uv run python -m core.cli reconcile                     # paper: IB vs SQLite, no orders
-    uv run python -m core.cli kill --reason "manual"        # latch; `rearm` to clear
+    uv run python -m core.cli kill --reason "manual"        # latch (blocks entries); `rearm` to clear
+    uv run python -m core.cli flatten --allow-trading       # paper: close the open strategy position now
+    uv run python -m core.cli flatten --dry-run             # same against fixtures + SimBroker
 """
 
 from __future__ import annotations
@@ -56,6 +58,11 @@ def _connect_paper(rules, *, allow_trading: bool):
                             readonly=not allow_trading)
 
 
+def cmd_flatten(args) -> int:
+    args.flatten = True
+    return cmd_run(args)
+
+
 def cmd_run(args) -> int:
     from core.brokers import IBExecution, SimBroker
     from core.cycle import run_cycle
@@ -76,7 +83,8 @@ def cmd_run(args) -> int:
         if args.dry_run:
             seeded = expected_option_positions(lineage.open_positions(strategy.name, "dry_run"))
             result = run_cycle(args.strategy, mode="dry_run", provider=FixtureMarketState(args.fixture),
-                               broker=SimBroker(seeded), lineage=lineage, allow_trading=True)
+                               broker=SimBroker(seeded), lineage=lineage, allow_trading=True,
+                               flatten=getattr(args, "flatten", False))
         else:
             from core.identity import assert_paper_identity
 
@@ -87,6 +95,7 @@ def cmd_run(args) -> int:
                     args.strategy, mode="paper", provider=IBMarketState(ib),
                     broker=IBExecution(ib, allow_trading=allow), lineage=lineage, allow_trading=allow,
                     identity_check=lambda: assert_paper_identity(ib, trading_mode="paper").account_id,
+                    flatten=getattr(args, "flatten", False),
                 )
             finally:
                 ib.disconnect()
@@ -213,6 +222,13 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--fixture", default=DEFAULT_FIXTURE)
     r.add_argument("--allow-trading", action="store_true", help="paper only: send via GuardedBroker")
     r.set_defaults(fn=cmd_run)
+
+    f = sub.add_parser("flatten", help="close the open strategy position now (allowed while kill switch is latched)")
+    f.add_argument("--strategy", default=DEFAULT_STRATEGY)
+    f.add_argument("--dry-run", action="store_true")
+    f.add_argument("--fixture", default=DEFAULT_FIXTURE)
+    f.add_argument("--allow-trading", action="store_true", help="paper only: send via GuardedBroker")
+    f.set_defaults(fn=cmd_flatten)
 
     e = sub.add_parser("explain")
     e.add_argument("cycle_id", nargs="?", default="last")

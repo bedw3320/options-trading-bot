@@ -117,4 +117,4 @@ notes:
   - "Deviation from vault: the vault blocks any event inside the DTE window; with FOMC every ~6 weeks that blocks 30-45 DTE SPY almost always, so v0 blocks entries 3 days before an event instead."
   - "Deviation from vault: short put alone has large tail risk; v0 adds a $20-lower long put so max loss is defined and capped."
   - "No rolls in v0: the 21-DTE review is a hard close."
-  - "Kill switch latches stop all cycle actions, including exits; clear with `core.cli rearm` after review."
+  - "A latched kill switch blocks new entries only; rule exits and `core.cli flatten` still run (paper, GuardedBroker). Clear with `core.cli rearm` after review."

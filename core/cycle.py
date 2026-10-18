@@ -75,6 +75,7 @@ def run_cycle(
     allow_trading: bool,
     identity_check: Callable[[], str] | None = None,
     now: Callable[[], datetime] | None = None,
+    flatten: bool = False,
 ) -> CycleResult:
     if mode not in MODES:
         raise ValueError(f"mode must be one of {MODES}")
@@ -91,7 +92,7 @@ def run_cycle(
                               mode=mode, git_sha=_git_sha())
     lineage.record(cid, "inputs", {
         "strategy_path": str(path), "strategy_sha256": sha, "version": strategy.version, "mode": mode,
-        "allow_trading": allow_trading, "started_at": clock().isoformat(), "rules": rules.model_dump(mode="json"),
+        "allow_trading": allow_trading, "flatten": flatten, "started_at": clock().isoformat(), "rules": rules.model_dump(mode="json"),
     })
 
     def finish(outcome: str, reasons: list[str], decision: Decision | None = None) -> CycleResult:
@@ -108,10 +109,10 @@ def run_cycle(
         return finish("abstained", reasons, Decision(action="abstain", reasons=reasons))
 
     try:
-        # 1. Kill switch (latched until `rearm`).
+        # 1. Kill switch (latched until `rearm`): blocks new entries only. Risk-reducing
+        #    exits of existing strategy positions (exit rules or `flatten`) still run,
+        #    through the same identity gate, reconcile and GuardedBroker path.
         kill = lineage.kill_state(name, mode)
-        if kill:
-            return abstain([f"kill_switch_latched: {kill['reason']} (since {kill['ts']})"])
 
         # 2. Paper-only enforcement. Dry-run never touches a broker account.
         if mode == "paper":
@@ -133,6 +134,7 @@ def run_cycle(
         rec = reconcile(broker, lineage, strategy=name, mode=mode, underlying=rules.underlying, cycle_id=cid)
         lineage.record(cid, "reconcile", {"phase": "pre", **rec})
         if not rec["ok"]:
+            # Drift blocks exits too: the position we would close cannot be verified.
             lineage.latch_kill(name, mode, "reconcile drift: " + "; ".join(rec["drift"])[:500])
             return abstain(["reconcile_drift"] + rec["drift"])
 
@@ -141,7 +143,8 @@ def run_cycle(
         realized = lineage.realized_pnl_since(name, mode, day_start)
         if realized <= -rules.kill_switch.daily_loss_limit_usd:
             lineage.latch_kill(name, mode, f"daily realized loss ${realized:.0f}")
-            return abstain([f"daily_loss_limit: realized ${realized:.0f}"])
+        kill = lineage.kill_state(name, mode)
+        kill_note = f"kill_switch_latched: {kill['reason']} (since {kill['ts']})" if kill else None
 
         # 5. Market state.
         positions = lineage.open_positions(name, mode)
@@ -150,22 +153,39 @@ def run_cycle(
         lineage.record(cid, "market_snapshot", snap.model_dump(mode="json"))
         if snap.status != "ok":
             extra = ["open position: exits not evaluable this cycle"] if positions else []
-            return abstain([f"market_data_unavailable: {snap.reason}"] + extra)
+            return abstain([f"market_data_unavailable: {snap.reason}"] + extra + ([kill_note] if kill_note else []))
 
         # 6a. Manage the open position (max one).
         if positions:
             pos = positions[0]
             trigger, mark, why = evaluate_exit(pos, snap, rules)
+            if flatten:
+                why = [f"manual flatten requested (rule trigger: {trigger})"] + why
+                trigger = "manual_flatten"
             lineage.record(cid, "signals", {"exit_evaluation": {"position_id": pos["position_id"],
                                                                  "trigger": trigger, "mark": mark, "reasons": why}})
             if trigger is None:
-                return finish("held", why, Decision(action="abstain", reasons=["holding position"] + why))
+                return finish("held", why + ([kill_note] if kill_note else []),
+                              Decision(action="abstain", reasons=["holding position"] + why))
             intent = build_exit(pos, mark, rules, strategy_name=name, idempotency_key=f"{cid}:close")
             if intent is None:
                 return abstain([f"exit trigger {trigger} but no leg marks to price the close"] + why)
+            if kill:
+                lineage.record(cid, "kill_switch", {"latched": True, "reason": kill["reason"], "since": kill["ts"],
+                                                    "action": "exit_allowed_while_latched", "trigger": trigger})
+                why = why + [f"{kill_note}; risk-reducing exit allowed"]
             decision = Decision(action="exit", reasons=why, exit_trigger=trigger)
             lineage.record(cid, "decision", decision.model_dump(mode="json"))
-            return _execute(cid, intent, mode, broker, lineage, rules, name, finish, trigger=trigger)
+            res = _execute(cid, intent, mode, broker, lineage, rules, name, finish, trigger=trigger)
+            if kill:
+                res.reasons.append("exit ran while kill switch latched")
+                lineage.annotate_reasons(cid, res.reasons)
+            return res
+
+        if flatten:
+            return abstain(["flatten: no open strategy position"] + ([kill_note] if kill_note else []))
+        if kill:
+            return abstain([kill_note, "new entries blocked"])
 
         # 6b. Entry.
         if lineage.entries_since(name, mode, day_start) >= rules.sizing.max_entries_per_day:
@@ -199,9 +219,17 @@ def _execute(cid, intent: ComboIntent, mode, broker, lineage: Lineage, rules, na
     lineage.insert_order(intent=intent.model_dump(mode="json"), cycle_id=cid, mode=mode, status="proposed")
 
     def revalidate(i: ComboIntent) -> None:
-        if lineage.kill_state(name, mode):
-            raise GuardedReject("kill switch latched")
         open_now = lineage.open_positions(name, mode)
+        if i.purpose == "open" and lineage.kill_state(name, mode):
+            raise GuardedReject("kill switch latched: new entries blocked")
+        if i.purpose == "close":
+            pos = next((p for p in open_now if p["position_id"] == i.position_id), None)
+            if pos is None:
+                raise GuardedReject("close for a position that is not open")
+            legs = sorted((l.occ, l.action, l.ratio) for l in i.legs)
+            held = sorted((l["occ"], l["action"], l.get("ratio", 1)) for l in pos["legs"])
+            if i.action != "SELL" or legs != held or i.quantity != pos["quantity"]:
+                raise GuardedReject("close does not exactly offset the open position (not risk-reducing)")
         if i.purpose == "open":
             if len(open_now) >= rules.sizing.max_open_positions:
                 raise GuardedReject("max open positions reached")

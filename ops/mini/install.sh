@@ -1,5 +1,6 @@
 #!/bin/bash
-# Idempotent Mini setup: launchd agents (start at login, watchdog 120s, heartbeat 600s) + power settings.
+# Idempotent Mini setup: launchd agents (start at login, watchdog 120s, heartbeat 600s,
+# cycle every 15 min record-only) + power settings.
 # Run from the repo:  bash ops/mini/install.sh
 set -euo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -25,6 +26,11 @@ PL
 mk com.otb.start     start.sh     '<key>RunAtLoad</key><true/>'
 mk com.otb.watchdog  watchdog.sh  '<key>RunAtLoad</key><true/><key>StartInterval</key><integer>120</integer>'
 mk com.otb.heartbeat heartbeat.sh '<key>RunAtLoad</key><true/><key>StartInterval</key><integer>600</integer>'
+# Record-only paper cycle (template so the schedule is reviewable in git).
+sed -e "s#__DIR__#$DIR#g" -e "s#__HOME__#$HOME#g" "$DIR/com.otb.cycle.plist.template" >"$LA/com.otb.cycle.plist"
+plutil -lint "$LA/com.otb.cycle.plist" >/dev/null 2>&1 || echo "WARN: plutil lint failed for com.otb.cycle"
+launchctl bootout "gui/$(id -u)/com.otb.cycle" 2>/dev/null || true
+launchctl bootstrap "gui/$(id -u)" "$LA/com.otb.cycle.plist" && echo "loaded com.otb.cycle"
 
 # Power: never sleep, restart after power loss, wake on network. Needs sudo (asks once).
 if sudo -n true 2>/dev/null || { [ -t 0 ] && sudo -v; }; then
@@ -40,4 +46,4 @@ fv=$(fdesetup status 2>/dev/null || echo unknown)
 echo
 echo "Auto-login user: ${al:-NOT SET}   FileVault: $fv"
 [ -z "$al" ] && echo "MANUAL: System Settings > Users & Groups > Automatically log in as $(whoami) (FileVault must be Off). LaunchAgents only run after login."
-echo "Status: $HOME/Library/Logs/otb-watchdog.log ; branch 'heartbeat' heartbeat/status.json on GitHub."
+echo "Status: $HOME/Library/Logs/otb-watchdog.log ; cycles: $HOME/Library/Logs/otb-cycle.log ; branch 'heartbeat' heartbeat/status.json on GitHub."

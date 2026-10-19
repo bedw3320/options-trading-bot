@@ -3,7 +3,9 @@
     uv run python -m core.cli run --dry-run                 # full cycle on fixtures, SimBroker
     uv run python -m core.cli run                           # paper, journal only (no send)
     uv run python -m core.cli run --allow-trading           # paper, sends via GuardedBroker
+    uv run python -m core.cli run --data-source alpaca      # quotes/Greeks from Alpaca, orders/identity on IB paper
     uv run python -m core.cli explain last                  # why it traded / abstained
+    uv run python -m core.cli list --limit 1 --json         # last cycle summary (heartbeat)
     uv run python -m core.cli list
     uv run python -m core.cli reconcile                     # paper: IB vs SQLite, no orders
     uv run python -m core.cli kill --reason "manual"        # latch (blocks entries); `rearm` to clear
@@ -66,7 +68,7 @@ def cmd_flatten(args) -> int:
 def cmd_run(args) -> int:
     from core.brokers import IBExecution, SimBroker
     from core.cycle import run_cycle
-    from core.market_state import FixtureMarketState, IBMarketState
+    from core.market_state import FixtureMarketState, make_provider
     from core.reconcile import expected_option_positions
     from core.strategy_loader import load
     from utils.lineage import Lineage
@@ -92,7 +94,7 @@ def cmd_run(args) -> int:
             ib = _connect_paper(strategy.rules, allow_trading=allow)
             try:
                 result = run_cycle(
-                    args.strategy, mode="paper", provider=IBMarketState(ib),
+                    args.strategy, mode="paper", provider=make_provider(args.data_source, ib=ib),
                     broker=IBExecution(ib, allow_trading=allow), lineage=lineage, allow_trading=allow,
                     identity_check=lambda: assert_paper_identity(ib, trading_mode="paper").account_id,
                     flatten=getattr(args, "flatten", False),
@@ -169,7 +171,12 @@ def cmd_explain(args) -> int:
 def cmd_list(args) -> int:
     from utils.lineage import Lineage, to_et
 
-    for c in Lineage(args.db).list_cycles(args.limit):
+    cycles = Lineage(args.db).list_cycles(args.limit)
+    if args.json:
+        print(json.dumps([{k: c.get(k) for k in ("cycle_id", "strategy", "mode", "started_at", "outcome", "reasons")}
+                          for c in cycles], default=str))
+        return 0
+    for c in cycles:
         first = c["reasons"][0] if c["reasons"] else ""
         print(f"{c['cycle_id']}  {to_et(c['started_at'])}  {c['mode']:<7} {c['outcome'] or 'running':<17} {first}")
     return 0
@@ -221,6 +228,8 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--dry-run", action="store_true", help="fixtures + SimBroker, no IB connection")
     r.add_argument("--fixture", default=DEFAULT_FIXTURE)
     r.add_argument("--allow-trading", action="store_true", help="paper only: send via GuardedBroker")
+    r.add_argument("--data-source", default=os.environ.get("MARKET_DATA_SOURCE", "ib"),
+                   help="quotes/Greeks provider: ib | alpaca (env MARKET_DATA_SOURCE)")
     r.set_defaults(fn=cmd_run)
 
     f = sub.add_parser("flatten", help="close the open strategy position now (allowed while kill switch is latched)")
@@ -228,6 +237,7 @@ def main(argv: list[str] | None = None) -> int:
     f.add_argument("--dry-run", action="store_true")
     f.add_argument("--fixture", default=DEFAULT_FIXTURE)
     f.add_argument("--allow-trading", action="store_true", help="paper only: send via GuardedBroker")
+    f.add_argument("--data-source", default=os.environ.get("MARKET_DATA_SOURCE", "ib"))
     f.set_defaults(fn=cmd_flatten)
 
     e = sub.add_parser("explain")
@@ -237,6 +247,7 @@ def main(argv: list[str] | None = None) -> int:
 
     l = sub.add_parser("list")
     l.add_argument("--limit", type=int, default=20)
+    l.add_argument("--json", action="store_true")
     l.set_defaults(fn=cmd_list)
 
     for nm, fn in (("kill", cmd_kill), ("rearm", cmd_rearm)):

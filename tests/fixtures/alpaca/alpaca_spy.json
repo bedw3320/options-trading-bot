@@ -1,0 +1,1036 @@
+{
+ "latest_trade": {
+  "symbol": "SPY",
+  "trade": {
+   "p": 778.0,
+   "t": "2026-10-19T15:00:00+00:00"
+  }
+ },
+ "bars": {
+  "bars": [
+   {
+    "c": 765.95,
+    "t": "day0"
+   },
+   {
+    "c": 770.85,
+    "t": "day1"
+   },
+   {
+    "c": 766.53,
+    "t": "day2"
+   },
+   {
+    "c": 771.44,
+    "t": "day3"
+   },
+   {
+    "c": 767.12,
+    "t": "day4"
+   },
+   {
+    "c": 772.03,
+    "t": "day5"
+   },
+   {
+    "c": 767.7,
+    "t": "day6"
+   },
+   {
+    "c": 772.62,
+    "t": "day7"
+   },
+   {
+    "c": 768.29,
+    "t": "day8"
+   },
+   {
+    "c": 773.21,
+    "t": "day9"
+   },
+   {
+    "c": 768.88,
+    "t": "day10"
+   },
+   {
+    "c": 773.8,
+    "t": "day11"
+   },
+   {
+    "c": 769.47,
+    "t": "day12"
+   },
+   {
+    "c": 774.39,
+    "t": "day13"
+   },
+   {
+    "c": 770.05,
+    "t": "day14"
+   },
+   {
+    "c": 774.98,
+    "t": "day15"
+   },
+   {
+    "c": 770.64,
+    "t": "day16"
+   },
+   {
+    "c": 775.57,
+    "t": "day17"
+   },
+   {
+    "c": 771.23,
+    "t": "day18"
+   },
+   {
+    "c": 776.17,
+    "t": "day19"
+   },
+   {
+    "c": 771.82,
+    "t": "day20"
+   },
+   {
+    "c": 776.76,
+    "t": "day21"
+   },
+   {
+    "c": 772.41,
+    "t": "day22"
+   },
+   {
+    "c": 777.35,
+    "t": "day23"
+   },
+   {
+    "c": 778.0,
+    "t": "day24"
+   }
+  ],
+  "next_page_token": null
+ },
+ "contracts_page1": {
+  "option_contracts": [
+   {
+    "symbol": "SPY261120P00580000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "580.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00585000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "585.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00590000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "590.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00595000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "595.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00600000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "600.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00605000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "605.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00610000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "610.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00615000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "615.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00620000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "620.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00625000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "625.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00630000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "630.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00635000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "635.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00640000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "640.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00645000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "645.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00650000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "650.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00655000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "655.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00660000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "660.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00665000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "665.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00670000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "670.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00675000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "675.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00680000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "680.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00685000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "685.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00690000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "690.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00695000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "695.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00700000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "700.00",
+    "open_interest": "5000"
+   }
+  ],
+  "next_page_token": "p2"
+ },
+ "contracts_page2": {
+  "option_contracts": [
+   {
+    "symbol": "SPY261120P00705000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "705.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00710000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "710.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00715000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "715.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00720000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "720.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00725000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "725.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00730000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "730.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00735000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "735.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00740000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "740.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00745000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "745.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00750000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "750.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00755000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "755.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00760000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "760.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00765000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "765.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00770000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "770.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120P00775000",
+    "expiration_date": "2026-11-20",
+    "type": "put",
+    "strike_price": "775.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120C00780000",
+    "expiration_date": "2026-11-20",
+    "type": "call",
+    "strike_price": "780.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120C00785000",
+    "expiration_date": "2026-11-20",
+    "type": "call",
+    "strike_price": "785.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120C00790000",
+    "expiration_date": "2026-11-20",
+    "type": "call",
+    "strike_price": "790.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120C00795000",
+    "expiration_date": "2026-11-20",
+    "type": "call",
+    "strike_price": "795.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120C00800000",
+    "expiration_date": "2026-11-20",
+    "type": "call",
+    "strike_price": "800.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120C00805000",
+    "expiration_date": "2026-11-20",
+    "type": "call",
+    "strike_price": "805.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120C00810000",
+    "expiration_date": "2026-11-20",
+    "type": "call",
+    "strike_price": "810.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120C00815000",
+    "expiration_date": "2026-11-20",
+    "type": "call",
+    "strike_price": "815.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120C00820000",
+    "expiration_date": "2026-11-20",
+    "type": "call",
+    "strike_price": "820.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261120C00825000",
+    "expiration_date": "2026-11-20",
+    "type": "call",
+    "strike_price": "825.00",
+    "open_interest": "5000"
+   },
+   {
+    "symbol": "SPY261218C00800000",
+    "expiration_date": "2026-12-18",
+    "type": "call",
+    "strike_price": "800.00",
+    "open_interest": "10"
+   }
+  ],
+  "next_page_token": null
+ },
+ "snapshots": {
+  "snapshots": {
+   "SPY261120P00580000": {
+    "latestQuote": {
+     "bp": 1.64,
+     "ap": 1.68,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.031
+    },
+    "impliedVolatility": 0.5631
+   },
+   "SPY261120P00585000": {
+    "latestQuote": {
+     "bp": 1.61,
+     "ap": 1.65,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.0312
+    },
+    "impliedVolatility": 0.5471
+   },
+   "SPY261120P00590000": {
+    "latestQuote": {
+     "bp": 1.57,
+     "ap": 1.61,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.0315
+    },
+    "impliedVolatility": 0.5314
+   },
+   "SPY261120P00595000": {
+    "latestQuote": {
+     "bp": 1.54,
+     "ap": 1.58,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.0318
+    },
+    "impliedVolatility": 0.516
+   },
+   "SPY261120P00600000": {
+    "latestQuote": {
+     "bp": 1.52,
+     "ap": 1.56,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.0322
+    },
+    "impliedVolatility": 0.501
+   },
+   "SPY261120P00605000": {
+    "latestQuote": {
+     "bp": 1.49,
+     "ap": 1.53,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.0327
+    },
+    "impliedVolatility": 0.4864
+   },
+   "SPY261120P00610000": {
+    "latestQuote": {
+     "bp": 1.47,
+     "ap": 1.51,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.0332
+    },
+    "impliedVolatility": 0.472
+   },
+   "SPY261120P00615000": {
+    "latestQuote": {
+     "bp": 1.46,
+     "ap": 1.5,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.0338
+    },
+    "impliedVolatility": 0.458
+   },
+   "SPY261120P00620000": {
+    "latestQuote": {
+     "bp": 1.44,
+     "ap": 1.48,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.0345
+    },
+    "impliedVolatility": 0.4443
+   },
+   "SPY261120P00625000": {
+    "latestQuote": {
+     "bp": 1.44,
+     "ap": 1.48,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.0353
+    },
+    "impliedVolatility": 0.4309
+   },
+   "SPY261120P00630000": {
+    "latestQuote": {
+     "bp": 1.43,
+     "ap": 1.47,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.0363
+    },
+    "impliedVolatility": 0.4178
+   },
+   "SPY261120P00635000": {
+    "latestQuote": {
+     "bp": 1.43,
+     "ap": 1.47,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.0373
+    },
+    "impliedVolatility": 0.405
+   },
+   "SPY261120P00640000": {
+    "latestQuote": {
+     "bp": 1.44,
+     "ap": 1.48,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.0385
+    },
+    "impliedVolatility": 0.3924
+   },
+   "SPY261120P00645000": {
+    "latestQuote": {
+     "bp": 1.45,
+     "ap": 1.49,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.0398
+    },
+    "impliedVolatility": 0.3802
+   },
+   "SPY261120P00650000": {
+    "latestQuote": {
+     "bp": 1.46,
+     "ap": 1.5,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.0413
+    },
+    "impliedVolatility": 0.3682
+   },
+   "SPY261120P00655000": {
+    "latestQuote": {
+     "bp": 1.48,
+     "ap": 1.52,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.0431
+    },
+    "impliedVolatility": 0.3565
+   },
+   "SPY261120P00660000": {
+    "latestQuote": {
+     "bp": 1.51,
+     "ap": 1.55,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.045
+    },
+    "impliedVolatility": 0.3451
+   },
+   "SPY261120P00665000": {
+    "latestQuote": {
+     "bp": 1.54,
+     "ap": 1.58,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.0472
+    },
+    "impliedVolatility": 0.3339
+   },
+   "SPY261120P00670000": {
+    "latestQuote": {
+     "bp": 1.58,
+     "ap": 1.62,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.0497
+    },
+    "impliedVolatility": 0.323
+   },
+   "SPY261120P00675000": {
+    "latestQuote": {
+     "bp": 1.63,
+     "ap": 1.67,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.0526
+    },
+    "impliedVolatility": 0.3123
+   },
+   "SPY261120P00680000": {
+    "latestQuote": {
+     "bp": 1.68,
+     "ap": 1.74,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.0559
+    },
+    "impliedVolatility": 0.3018
+   },
+   "SPY261120P00685000": {
+    "latestQuote": {
+     "bp": 1.75,
+     "ap": 1.81,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.0596
+    },
+    "impliedVolatility": 0.2916
+   },
+   "SPY261120P00690000": {
+    "latestQuote": {
+     "bp": 1.83,
+     "ap": 1.89,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.0639
+    },
+    "impliedVolatility": 0.2816
+   },
+   "SPY261120P00695000": {
+    "latestQuote": {
+     "bp": 1.93,
+     "ap": 1.99,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.0688
+    },
+    "impliedVolatility": 0.2719
+   },
+   "SPY261120P00700000": {
+    "latestQuote": {
+     "bp": 2.04,
+     "ap": 2.1,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.0744
+    },
+    "impliedVolatility": 0.2624
+   },
+   "SPY261120P00705000": {
+    "latestQuote": {
+     "bp": 2.18,
+     "ap": 2.24,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.0809
+    },
+    "impliedVolatility": 0.2531
+   },
+   "SPY261120P00710000": {
+    "latestQuote": {
+     "bp": 2.33,
+     "ap": 2.41,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.0884
+    },
+    "impliedVolatility": 0.244
+   },
+   "SPY261120P00715000": {
+    "latestQuote": {
+     "bp": 2.51,
+     "ap": 2.59,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.0971
+    },
+    "impliedVolatility": 0.2351
+   },
+   "SPY261120P00720000": {
+    "latestQuote": {
+     "bp": 2.73,
+     "ap": 2.81,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.1073
+    },
+    "impliedVolatility": 0.2265
+   },
+   "SPY261120P00725000": {
+    "latestQuote": {
+     "bp": 2.97,
+     "ap": 3.07,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.1191
+    },
+    "impliedVolatility": 0.218
+   },
+   "SPY261120P00730000": {
+    "latestQuote": {
+     "bp": 3.27,
+     "ap": 3.37,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.1329
+    },
+    "impliedVolatility": 0.2098
+   },
+   "SPY261120P00735000": {
+    "latestQuote": {
+     "bp": 3.62,
+     "ap": 3.74,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.149
+    },
+    "impliedVolatility": 0.2017
+   },
+   "SPY261120P00740000": {
+    "latestQuote": {
+     "bp": 4.04,
+     "ap": 4.16,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.1679
+    },
+    "impliedVolatility": 0.1938
+   },
+   "SPY261120P00745000": {
+    "latestQuote": {
+     "bp": 4.54,
+     "ap": 4.68,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.1901
+    },
+    "impliedVolatility": 0.1862
+   },
+   "SPY261120P00750000": {
+    "latestQuote": {
+     "bp": 5.13,
+     "ap": 5.29,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.2161
+    },
+    "impliedVolatility": 0.1787
+   },
+   "SPY261120P00755000": {
+    "latestQuote": {
+     "bp": 5.84,
+     "ap": 6.02,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.2464
+    },
+    "impliedVolatility": 0.1714
+   },
+   "SPY261120P00760000": {
+    "latestQuote": {
+     "bp": 6.68,
+     "ap": 6.88,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.2817
+    },
+    "impliedVolatility": 0.1642
+   },
+   "SPY261120P00765000": {
+    "latestQuote": {
+     "bp": 7.69,
+     "ap": 7.93,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.3226
+    },
+    "impliedVolatility": 0.1573
+   },
+   "SPY261120P00770000": {
+    "latestQuote": {
+     "bp": 8.9,
+     "ap": 9.18,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.3696
+    },
+    "impliedVolatility": 0.1505
+   },
+   "SPY261120P00775000": {
+    "latestQuote": {
+     "bp": 10.35,
+     "ap": 10.67,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": -0.423
+    },
+    "impliedVolatility": 0.1439
+   },
+   "SPY261120C00780000": {
+    "latestQuote": {
+     "bp": 12.8,
+     "ap": 13.18,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": 0.5173
+    },
+    "impliedVolatility": 0.1374
+   },
+   "SPY261120C00785000": {
+    "latestQuote": {
+     "bp": 9.93,
+     "ap": 10.23,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": 0.4519
+    },
+    "impliedVolatility": 0.1312
+   },
+   "SPY261120C00790000": {
+    "latestQuote": {
+     "bp": 7.41,
+     "ap": 7.63,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": 0.382
+    },
+    "impliedVolatility": 0.125
+   },
+   "SPY261120C00795000": {
+    "latestQuote": {
+     "bp": 5.28,
+     "ap": 5.44,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": 0.31
+    },
+    "impliedVolatility": 0.1191
+   },
+   "SPY261120C00800000": {
+    "latestQuote": {
+     "bp": 3.56,
+     "ap": 3.66,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": 0.2388
+    },
+    "impliedVolatility": 0.1133
+   },
+   "SPY261120C00805000": {
+    "latestQuote": {
+     "bp": 2.23,
+     "ap": 2.29,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": 0.1724
+    },
+    "impliedVolatility": 0.1076
+   },
+   "SPY261120C00810000": {
+    "latestQuote": {
+     "bp": 1.28,
+     "ap": 1.32,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": 0.1147
+    },
+    "impliedVolatility": 0.1021
+   },
+   "SPY261120C00815000": {
+    "latestQuote": {
+     "bp": 0.66,
+     "ap": 0.68,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": 0.0688
+    },
+    "impliedVolatility": 0.0968
+   },
+   "SPY261120C00820000": {
+    "latestQuote": {
+     "bp": 0.29,
+     "ap": 0.31,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": 0.0362
+    },
+    "impliedVolatility": 0.0916
+   },
+   "SPY261120C00825000": {
+    "latestQuote": {
+     "bp": 0.1,
+     "ap": 0.12,
+     "t": "2026-10-19T15:00:00+00:00"
+    },
+    "greeks": {
+     "delta": 0.0162
+    },
+    "impliedVolatility": 0.0865
+   }
+  },
+  "next_page_token": null
+ }
+}

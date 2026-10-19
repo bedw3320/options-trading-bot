@@ -160,3 +160,24 @@ class IBMarketState:
             as_of=as_of, source="ib", underlying=und, status="ok", underlying_price=float(price),
             daily_closes=closes, expiry=expiry, options=options, held_marks=held_marks,
         )
+
+
+# --- pluggable source -------------------------------------------------------
+# MARKET_DATA_SOURCE (env or `core.cli run --data-source`) picks who supplies quotes/Greeks.
+# Orders, identity and reconcile always stay on IBKR paper; only the snapshot is swapped.
+DATA_SOURCES = ("ib", "alpaca")
+
+
+def make_provider(source: str, *, ib: Any = None) -> MarketStateProvider:
+    """Return the configured provider. Add a vendor: write integrations/vendors/<name>.py
+    with a class exposing snapshot(rules, *, held_legs) -> MarketSnapshot, register it here."""
+    src = (source or "ib").strip().lower()
+    if src == "ib":
+        if ib is None:
+            raise ValueError("source 'ib' needs a connected IB client")
+        return IBMarketState(ib)
+    if src == "alpaca":
+        from integrations.vendors.alpaca import AlpacaMarketState
+
+        return AlpacaMarketState()
+    raise ValueError(f"unknown MARKET_DATA_SOURCE {source!r}; expected one of {DATA_SOURCES}")

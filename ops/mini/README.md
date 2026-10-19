@@ -35,3 +35,16 @@ From `~/options-trading-bot` on the Mini (see `knowledge/ops/deterministic-cycle
     TRADING_MODE=paper IB_GATEWAY_HOST=127.0.0.1 IB_GATEWAY_PORT=4002 uv run python -m core.cli run   # paper, journal only
 
 Not scheduled by launchd yet; until IB option data works every paper cycle abstains (10197).
+
+## Record-only cycle (`com.otb.cycle`)
+
+`install.sh` renders `com.otb.cycle.plist.template` into `~/Library/LaunchAgents`. launchd fires
+at :00/:15/:30/:45; `cycle.sh` exits unless it is a weekday 10:00–15:30 America/New_York, then runs
+one `uv run python -m core.cli run` with `TRADING_MODE=paper ALLOW_TRADING=false` (journal only,
+never `--allow-trading`). Output: `~/Library/Logs/otb-cycle.log`. The last cycle summary goes to
+`~/Library/Application Support/otb/last_cycle.json` and into the heartbeat as `last_cycle`
+(`cycle_id`, `decision`, `reason`). Force one now: `bash ops/mini/cycle.sh --force`; inspect:
+`uv run python -m core.cli explain last`.
+
+Quotes/Greeks source: `MARKET_DATA_SOURCE` in `.env` (`ib` default, or `alpaca` with
+`ALPACA_API_KEY_ID` / `ALPACA_API_SECRET_KEY`). Orders, identity and reconcile stay on IBKR paper.

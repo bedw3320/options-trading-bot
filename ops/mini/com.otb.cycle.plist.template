@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Rendered by ops/mini/install.sh (__DIR__, __HOME__). Fires every 15 min; cycle.sh gates to
+     weekdays 10:00-15:30 America/New_York and runs `core.cli run` record-only. -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.otb.cycle</string>
+  <key>ProgramArguments</key><array><string>/bin/bash</string><string>__DIR__/cycle.sh</string></array>
+  <key>StartCalendarInterval</key><array>
+    <dict><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Minute</key><integer>15</integer></dict>
+    <dict><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Minute</key><integer>45</integer></dict>
+  </array>
+  <key>StandardOutPath</key><string>__HOME__/Library/Logs/otb-cycle.log</string>
+  <key>StandardErrorPath</key><string>__HOME__/Library/Logs/otb-cycle.log</string>
+</dict></plist>

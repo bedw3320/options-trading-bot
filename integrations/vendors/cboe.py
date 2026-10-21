@@ -1,6 +1,6 @@
 """CBOE delayed-quotes adapter (unofficial CDN JSON, ~15-min delayed).
 
-Primary: https://cdn.cboe.com/api/global/delayed_quotes/options/{SYM}.json
+Primary: https://cdn-api.cboe.com/api/global/delayed_quotes/options/{SYM}.json
   — underlying print + full chain with bid/ask/iv/delta/gamma/vega/theta/OI
     per OCC symbol (e.g. SPY261130P00740000). No key.
 
@@ -32,7 +32,7 @@ from utils.time_et import ET
 log = get_logger(__name__)
 
 SOURCE = "cboe_delayed"
-OPTIONS_URL = "https://cdn.cboe.com/api/global/delayed_quotes/options/{symbol}.json"
+OPTIONS_URL = "https://cdn-api.cboe.com/api/global/delayed_quotes/options/{symbol}.json"
 BARS_URL = "https://stooq.com/q/d/l/?s={symbol}.us&i=d"
 MAX_AGE = timedelta(minutes=45)
 _UA = {"User-Agent": "options-trading-bot/cboe-shadow"}
@@ -99,7 +99,7 @@ class CboeMarketState:
         options_url: str = OPTIONS_URL,
         bars_url: str = BARS_URL,
     ) -> None:
-        self.client = client or httpx.Client(timeout=20.0, headers=_UA)
+        self.client = client or httpx.Client(timeout=20.0, headers=_UA, follow_redirects=True)
         self._today = today
         self._now = now or (lambda: datetime.now(timezone.utc))
         self.max_age = max_age

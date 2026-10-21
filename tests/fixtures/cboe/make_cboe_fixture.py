@@ -3,6 +3,7 @@
     uv run python tests/fixtures/cboe/make_cboe_fixture.py
 """
 import json
+from datetime import date, timedelta
 from pathlib import Path
 
 HERE = Path(__file__).parent
@@ -25,9 +26,13 @@ options.append({
     "option": "SPY261218C00800000", "bid": 1.0, "ask": 1.1, "iv": 20.0, "delta": 0.2,
     "gamma": 0.01, "vega": 0.1, "theta": -0.02, "open_interest": 10,
 })
+# Last completed session before fixture today (2026-10-19 Mon) is 2026-10-16 Fri.
 rows = ["Date,Open,High,Low,Close,Volume"]
+end = date(2026, 10, 16)
+n = len(src["daily_closes"])
 for i, c in enumerate(src["daily_closes"]):
-    rows.append(f"2026-09-{i + 1:02d},{c},{c},{c},{c},1")
+    d = end - timedelta(days=n - 1 - i)
+    rows.append(f"{d.isoformat()},{c},{c},{c},{c},1")
 out = {
     "options": {
         "timestamp": "2026-10-19T11:00:00",

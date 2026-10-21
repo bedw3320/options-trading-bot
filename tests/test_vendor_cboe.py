@@ -16,7 +16,10 @@ from core.market_state import FixtureMarketState, make_provider
 from core.report import render, summarize
 from core.shadow import shadow_refusal, shadow_tag
 from core.strategy_loader import load
-from integrations.vendors.cboe import CboeMarketState, iv_decimal, parse_cboe_ts, probe_line
+from integrations.vendors.cboe import (
+    CboeMarketState, MAX_BAR_LAG_DAYS, closes_from_bars_text, iv_decimal,
+    parse_bar_date, parse_cboe_ts, probe_line,
+)
 from utils.lineage import Lineage
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -125,7 +128,7 @@ def test_missing_timestamp_unavailable(rules):
 
 
 def test_short_bars_unavailable(rules):
-    snap = provider([], bars="Date,Open,High,Low,Close,Volume\n2026-10-01,1,1,1,1,1\n").snapshot(
+    snap = provider([], bars="Date,Open,High,Low,Close,Volume\n2026-10-16,1,1,1,1,1\n").snapshot(
         rules, held_legs=[])
     assert snap.status == "unavailable" and snap.reason.startswith("historical_bars_unavailable")
 
@@ -225,3 +228,34 @@ def test_daily_closes_from_cboe_history_json(rules):
     assert snap.status == "ok", snap.reason
     assert snap.daily_closes == csv_snap.daily_closes
     assert any("/charts/historical/SPY.json" in c.url.path for c in calls)
+
+
+def test_parse_bar_date_does_not_guess():
+    assert parse_bar_date("2026-10-16") == date(2026, 10, 16)
+    assert parse_bar_date("2026-10-16T00:00:00") == date(2026, 10, 16)
+    assert parse_bar_date("10/16/2026") == date(2026, 10, 16)
+    assert parse_bar_date(None) is None
+    assert parse_bar_date("") is None
+    assert parse_bar_date("not-a-date") is None
+
+
+def test_undated_or_today_bars_are_skipped():
+    text = json.dumps({"data": [
+        {"date": "2026-10-16", "close": 2.0},
+        {"date": "", "close": 999.0},
+        {"close": 888.0},
+        {"date": "2026-10-19", "close": 3.0},  # today: incomplete
+        {"date": "2026-10-20", "close": 4.0},  # future
+        {"date": "2026-10-15", "close": 1.0},
+    ]})
+    closes, err = closes_from_bars_text(text, today=TODAY, n=10)
+    assert err is None
+    assert closes == [1.0, 2.0]
+
+
+def test_stale_daily_bars_unavailable(rules):
+    rows = [{"date": f"2026-08-{i:02d}", "close": 100.0 + i} for i in range(1, 26)]
+    snap = provider([], bars=json.dumps({"data": rows})).snapshot(rules, held_legs=[])
+    assert snap.status == "unavailable"
+    assert snap.reason.startswith("historical_bars_stale")
+    assert f"max_lag_d={MAX_BAR_LAG_DAYS}" in snap.reason

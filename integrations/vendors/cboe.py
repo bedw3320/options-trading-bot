@@ -5,8 +5,11 @@ Primary: https://cdn-api.cboe.com/api/global/delayed_quotes/options/{SYM}.json
     per OCC symbol (e.g. SPY261130P00740000). No key.
 
 Daily closes: that JSON has no history. RV needs lookback closes, so this
-adapter also pulls public delayed daily bars from Stooq
-(`https://stooq.com/q/d/l/?s=spy.us&i=d`). Missing/stale bars abstain.
+adapter also pulls CBOE's public daily bars
+(`https://cdn-api.cboe.com/api/global/delayed_quotes/charts/historical/SPY.json`,
+JSON `{"data": [{"date", "close", ...}]}`). A CSV body (Date,...,Close,...) is
+still parsed if the response is not that JSON — Stooq is not fetched (it now
+serves a JS challenge). Missing/undated/stale bars abstain.
 
 Never fabricates: missing or unusable fields stay None; stale/missing
 timestamps or prices return status=unavailable with an explicit reason.
@@ -16,6 +19,8 @@ shadow / record-only (see core.shadow).
 """
 
 from __future__ import annotations
+
+import json
 
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
@@ -33,8 +38,9 @@ log = get_logger(__name__)
 
 SOURCE = "cboe_delayed"
 OPTIONS_URL = "https://cdn-api.cboe.com/api/global/delayed_quotes/options/{symbol}.json"
-BARS_URL = "https://stooq.com/q/d/l/?s={symbol}.us&i=d"
+BARS_URL = "https://cdn-api.cboe.com/api/global/delayed_quotes/charts/historical/{symbol}.json"
 MAX_AGE = timedelta(minutes=45)
+MAX_BAR_LAG_DAYS = 10  # last completed daily bar vs snapshot date (weekends/holidays)
 _UA = {"User-Agent": "options-trading-bot/cboe-shadow"}
 
 
@@ -82,6 +88,76 @@ def parse_cboe_ts(raw: Any) -> datetime | None:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=ET)
     return dt.astimezone(timezone.utc)
+
+
+def parse_bar_date(raw: Any) -> date | None:
+    """Parse a daily-bar date. Unparseable values are missing, not guessed."""
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s:
+        return None
+    if "T" in s:
+        s = s.split("T", 1)[0]
+    for fmt in ("%Y-%m-%d", "%Y%m%d", "%m/%d/%Y"):
+        try:
+            return datetime.strptime(s[:10] if fmt != "%Y%m%d" else s[:8], fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def closes_from_bars_text(text: str, *, today: date, n: int) -> tuple[list[float], str | None]:
+    """Parse CBOE historical JSON or a Date/OHLCV CSV. Never invents closes.
+
+    Drops today/future (incomplete session). Last bar older than MAX_BAR_LAG_DAYS
+    returns a stale reason. Rows without a parseable date or a positive close
+    are skipped so they cannot scramble the RV series.
+    """
+    pairs = _pairs_from_json(text)
+    if pairs is None:
+        pairs = _pairs_from_csv(text)
+    by_date: dict[date, float] = {}
+    for d, px in pairs:
+        if d < today:
+            by_date[d] = px
+    ordered = sorted(by_date.items())
+    if not ordered:
+        return [], None
+    last = ordered[-1][0]
+    if (today - last).days > MAX_BAR_LAG_DAYS:
+        return [], (f"historical_bars_stale last={last.isoformat()} today={today.isoformat()}"
+                    f" max_lag_d={MAX_BAR_LAG_DAYS}")
+    return [px for _, px in ordered[-n:]], None
+
+
+def _pairs_from_json(text: str) -> list[tuple[date, float]] | None:
+    try:
+        raw = json.loads(text)
+    except ValueError:
+        return None
+    if not (isinstance(raw, dict) and isinstance(raw.get("data"), list)):
+        return None
+    out: list[tuple[date, float]] = []
+    for r in raw["data"]:
+        if not isinstance(r, dict):
+            continue
+        d, px = parse_bar_date(r.get("date")), _f(r.get("close"))
+        if d is not None and px is not None and px > 0:
+            out.append((d, px))
+    return out
+
+
+def _pairs_from_csv(text: str) -> list[tuple[date, float]]:
+    out: list[tuple[date, float]] = []
+    for line in text.splitlines()[1:]:
+        parts = line.split(",")
+        if len(parts) < 5:
+            continue
+        d, px = parse_bar_date(parts[0]), _f(parts[4])
+        if d is not None and px is not None and px > 0:
+            out.append((d, px))
+    return out
 
 
 class VendorError(RuntimeError):
@@ -157,7 +233,9 @@ class CboeMarketState:
         if price is None or price <= 0:
             return unavailable(und, self.source, "no_underlying_price", [], as_of)
 
-        closes = self._daily_closes(und, rules.signals.rv_lookback_days + 5)
+        closes, bars_err = self._daily_closes(und, rules.signals.rv_lookback_days + 5, today)
+        if bars_err:
+            return unavailable(und, self.source, bars_err, [], as_of)
         if len(closes) < rules.signals.rv_lookback_days + 1:
             return unavailable(und, self.source, f"historical_bars_unavailable n={len(closes)}", [], as_of)
 
@@ -187,17 +265,9 @@ class CboeMarketState:
             return unavailable(und, self.source, "no_option_greeks_or_bid_ask", [], as_of)
         return snap
 
-    def _daily_closes(self, symbol: str, n: int) -> list[float]:
-        text = self._get(self.bars_url.format(symbol=symbol.lower())).text
-        closes: list[float] = []
-        for line in text.splitlines()[1:]:
-            parts = line.split(",")
-            if len(parts) < 5:
-                continue
-            px = _f(parts[4])
-            if px is not None and px > 0:
-                closes.append(px)
-        return closes[-n:]
+    def _daily_closes(self, symbol: str, n: int, today: date) -> tuple[list[float], str | None]:
+        url = self.bars_url.format(symbol=symbol.upper() if "cboe.com" in self.bars_url else symbol.lower())
+        return closes_from_bars_text(self._get(url).text, today=today, n=n)
 
 
 def _map_chain(options: list[dict], underlying: str) -> tuple[list[Contract], dict[str, Quote]]:

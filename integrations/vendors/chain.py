@@ -29,6 +29,9 @@ class Quote:
     ask: float | None = None
     delta: float | None = None
     iv: float | None = None
+    gamma: float | None = None
+    vega: float | None = None
+    theta: float | None = None
 
     @property
     def mid(self) -> float | None:
@@ -80,6 +83,7 @@ def assemble(*, rules: DeterministicRules, source: str, price: float, closes: li
             occ=c.occ, expiry=c.expiry, right=c.right, strike=c.strike,
             bid=q.bid if q else None, ask=q.ask if q else None,
             delta=q.delta if q else None, iv=q.iv if q else None,
+            gamma=q.gamma if q else None, vega=q.vega if q else None, theta=q.theta if q else None,
             open_interest=c.open_interest, status="ok" if q else "no_quote",
         ))
     held = {k: v.mid for k, v in (held_quotes or {}).items() if v.mid is not None}

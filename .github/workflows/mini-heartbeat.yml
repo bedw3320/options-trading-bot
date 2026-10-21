@@ -1,0 +1,28 @@
+# Alert when the Mac Mini goes quiet. No secrets, no external service:
+# GitHub emails the workflow owner on failure (repo notification settings).
+name: mini-heartbeat
+
+on:
+  schedule:
+    # Every 30 min, weekdays, US market hours in UTC (covers EST and EDT).
+    - cron: "*/30 13-21 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Fetch heartbeat/status.json
+        run: |
+          set -euo pipefail
+          git fetch --depth=1 origin heartbeat
+          git show origin/heartbeat:heartbeat/status.json > /tmp/heartbeat-status.json
+
+      - name: Fail if Mini is quiet or Gateway logged out
+        run: python3 scripts/check_heartbeat.py /tmp/heartbeat-status.json

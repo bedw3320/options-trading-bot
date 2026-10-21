@@ -21,6 +21,9 @@ class OptionRow(BaseModel):
     ask: float | None = None
     delta: float | None = None
     iv: float | None = None
+    gamma: float | None = None
+    vega: float | None = None
+    theta: float | None = None
     open_interest: float | None = None
     status: str = "ok"
 
@@ -35,7 +38,7 @@ class MarketSnapshot(BaseModel):
     """Everything the decision may use, timestamped. Nothing else is read."""
 
     as_of: str  # ISO 8601 with offset
-    source: str  # "ib" | "fixture:<path>"
+    source: str  # "ib" | "cboe_delayed" | "alpaca:..." | "fixture:<path>"
     underlying: str
     status: SnapshotStatus = "ok"
     reason: str | None = None

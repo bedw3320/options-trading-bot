@@ -5,8 +5,11 @@ Primary: https://cdn-api.cboe.com/api/global/delayed_quotes/options/{SYM}.json
     per OCC symbol (e.g. SPY261130P00740000). No key.
 
 Daily closes: that JSON has no history. RV needs lookback closes, so this
-adapter also pulls public delayed daily bars from Stooq
-(`https://stooq.com/q/d/l/?s=spy.us&i=d`). Missing/stale bars abstain.
+adapter also pulls CBOE's public daily bars
+(`https://cdn-api.cboe.com/api/global/delayed_quotes/charts/historical/SPY.json`,
+JSON `{"data": [{"date", "close", ...}]}`). A Stooq-style CSV body is still
+parsed as a fallback (Stooq now serves a JS challenge to scripts). Missing/stale
+bars abstain.
 
 Never fabricates: missing or unusable fields stay None; stale/missing
 timestamps or prices return status=unavailable with an explicit reason.
@@ -16,6 +19,8 @@ shadow / record-only (see core.shadow).
 """
 
 from __future__ import annotations
+
+import json
 
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
@@ -33,7 +38,7 @@ log = get_logger(__name__)
 
 SOURCE = "cboe_delayed"
 OPTIONS_URL = "https://cdn-api.cboe.com/api/global/delayed_quotes/options/{symbol}.json"
-BARS_URL = "https://stooq.com/q/d/l/?s={symbol}.us&i=d"
+BARS_URL = "https://cdn-api.cboe.com/api/global/delayed_quotes/charts/historical/{symbol}.json"
 MAX_AGE = timedelta(minutes=45)
 _UA = {"User-Agent": "options-trading-bot/cboe-shadow"}
 
@@ -188,8 +193,20 @@ class CboeMarketState:
         return snap
 
     def _daily_closes(self, symbol: str, n: int) -> list[float]:
-        text = self._get(self.bars_url.format(symbol=symbol.lower())).text
+        url = self.bars_url.format(symbol=symbol.upper() if "cboe.com" in self.bars_url else symbol.lower())
+        text = self._get(url).text
         closes: list[float] = []
+        try:
+            raw = json.loads(text)
+        except ValueError:
+            raw = None
+        if isinstance(raw, dict) and isinstance(raw.get("data"), list):
+            rows = sorted((r for r in raw["data"] if isinstance(r, dict)), key=lambda r: str(r.get("date", "")))
+            for r in rows:
+                px = _f(r.get("close"))
+                if px is not None and px > 0:
+                    closes.append(px)
+            return closes[-n:]
         for line in text.splitlines()[1:]:
             parts = line.split(",")
             if len(parts) < 5:

@@ -40,6 +40,8 @@ def transport(calls: list, *, status: int = 200, options=None, bars=None, stale:
         if status != 200:
             return httpx.Response(status, text="nope")
         host = req.url.host or ""
+        if "/charts/historical/" in req.url.path:
+            return httpx.Response(200, text=csv)
         if "cboe.com" in host or req.url.path.endswith(".json"):
             return httpx.Response(200, json=body)
         if "stooq.com" in host or req.url.path.endswith("/l/"):
@@ -212,3 +214,14 @@ def test_report_summarizes_intent_and_greeks(tmp_path):
     assert "SELL SPY" in text and "d=" in text
     blob = render([lin.get_cycle(res.cycle_id)], as_json=True)
     assert json.loads(blob)[0]["data_source"] == "cboe_delayed"
+
+
+def test_daily_closes_from_cboe_history_json(rules):
+    rows = [ln.split(",") for ln in FX["bars_csv"].splitlines()[1:] if ln.strip()]
+    hist = json.dumps({"data": [{"date": r[0], "close": float(r[4])} for r in reversed(rows)]})
+    calls: list = []
+    snap = provider(calls, bars=hist).snapshot(rules, held_legs=[])
+    csv_snap = provider([]).snapshot(rules, held_legs=[])
+    assert snap.status == "ok", snap.reason
+    assert snap.daily_closes == csv_snap.daily_closes
+    assert any("/charts/historical/SPY.json" in c.url.path for c in calls)

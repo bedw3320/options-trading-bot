@@ -4,7 +4,9 @@
     uv run python -m core.cli run                           # paper, journal only (no send)
     uv run python -m core.cli run --allow-trading           # paper, sends via GuardedBroker
     uv run python -m core.cli run --data-source alpaca      # quotes/Greeks from Alpaca, orders/identity on IB paper
+    uv run python -m core.cli run --data-source cboe        # CBOE delayed quotes; record-only, cannot place
     uv run python -m core.cli explain last                  # why it traded / abstained
+    uv run python -m core.cli report                        # decision / strikes / credit / Greeks per cycle
     uv run python -m core.cli list --limit 1 --json         # last cycle summary (heartbeat)
     uv run python -m core.cli list
     uv run python -m core.cli reconcile                     # paper: IB vs SQLite, no orders
@@ -82,22 +84,28 @@ def cmd_run(args) -> int:
         if not got:
             print("SKIP another cycle is running (state/cycle.lock)")
             return 3
+        src = (getattr(args, "data_source", None) or "ib").strip().lower()
         if args.dry_run:
             seeded = expected_option_positions(lineage.open_positions(strategy.name, "dry_run"))
             result = run_cycle(args.strategy, mode="dry_run", provider=FixtureMarketState(args.fixture),
                                broker=SimBroker(seeded), lineage=lineage, allow_trading=True,
-                               flatten=getattr(args, "flatten", False))
+                               flatten=getattr(args, "flatten", False), data_source=src)
         else:
             from core.identity import assert_paper_identity
+            from core.shadow import shadow_tag
 
             allow = args.allow_trading or os.environ.get("ALLOW_TRADING", "false").lower() == "true"
+            if shadow_tag(src) and (allow or args.allow_trading):
+                print("REFUSED: MARKET_DATA_SOURCE=cboe is delayed shadow data; cannot place orders",
+                      file=sys.stderr)
+                return 2
             ib = _connect_paper(strategy.rules, allow_trading=allow)
             try:
                 result = run_cycle(
-                    args.strategy, mode="paper", provider=make_provider(args.data_source, ib=ib),
+                    args.strategy, mode="paper", provider=make_provider(src, ib=ib),
                     broker=IBExecution(ib, allow_trading=allow), lineage=lineage, allow_trading=allow,
                     identity_check=lambda: assert_paper_identity(ib, trading_mode="paper").account_id,
-                    flatten=getattr(args, "flatten", False),
+                    flatten=getattr(args, "flatten", False), data_source=src,
                 )
             finally:
                 ib.disconnect()
@@ -182,6 +190,17 @@ def cmd_list(args) -> int:
     return 0
 
 
+def cmd_report(args) -> int:
+    from core.report import main as report_main
+
+    argv = ["--db", args.db, "--limit", str(args.limit)]
+    if args.json:
+        argv.append("--json")
+    if getattr(args, "cycle", None):
+        argv += ["--cycle", args.cycle]
+    return report_main(argv)
+
+
 def cmd_kill(args) -> int:
     from utils.lineage import Lineage
 
@@ -229,7 +248,8 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--fixture", default=DEFAULT_FIXTURE)
     r.add_argument("--allow-trading", action="store_true", help="paper only: send via GuardedBroker")
     r.add_argument("--data-source", default=os.environ.get("MARKET_DATA_SOURCE", "ib"),
-                   help="quotes/Greeks provider: ib | alpaca (env MARKET_DATA_SOURCE)")
+                   help="quotes/Greeks provider: ib | alpaca | cboe (env MARKET_DATA_SOURCE); "
+                        "cboe is delayed shadow data and cannot place orders")
     r.set_defaults(fn=cmd_run)
 
     f = sub.add_parser("flatten", help="close the open strategy position now (allowed while kill switch is latched)")
@@ -237,7 +257,8 @@ def main(argv: list[str] | None = None) -> int:
     f.add_argument("--dry-run", action="store_true")
     f.add_argument("--fixture", default=DEFAULT_FIXTURE)
     f.add_argument("--allow-trading", action="store_true", help="paper only: send via GuardedBroker")
-    f.add_argument("--data-source", default=os.environ.get("MARKET_DATA_SOURCE", "ib"))
+    f.add_argument("--data-source", default=os.environ.get("MARKET_DATA_SOURCE", "ib"),
+                   help="quotes/Greeks provider: ib | alpaca | cboe (cboe cannot place)")
     f.set_defaults(fn=cmd_flatten)
 
     e = sub.add_parser("explain")
@@ -249,6 +270,12 @@ def main(argv: list[str] | None = None) -> int:
     l.add_argument("--limit", type=int, default=20)
     l.add_argument("--json", action="store_true")
     l.set_defaults(fn=cmd_list)
+
+    rp = sub.add_parser("report", help="summarize recorded cycles (decision, strikes, credit, Greeks)")
+    rp.add_argument("--limit", type=int, default=20)
+    rp.add_argument("--json", action="store_true")
+    rp.add_argument("--cycle", default=None)
+    rp.set_defaults(fn=cmd_report)
 
     for nm, fn in (("kill", cmd_kill), ("rearm", cmd_rearm)):
         k = sub.add_parser(nm)

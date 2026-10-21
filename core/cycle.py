@@ -21,6 +21,7 @@ from core.identity import IdentityError
 from core.market_state import MarketStateProvider
 from core.reconcile import reconcile
 from core.rr_rules import build_entry, build_exit, evaluate_exit
+from core.shadow import TaggedLineage, shadow_refusal, shadow_tag
 from core.signals import compute_signals, failing_required
 from core.strategy_loader import load as load_strategy
 from schemas.cycle import ComboIntent, Decision
@@ -76,6 +77,7 @@ def run_cycle(
     identity_check: Callable[[], str] | None = None,
     now: Callable[[], datetime] | None = None,
     flatten: bool = False,
+    data_source: str = "ib",
 ) -> CycleResult:
     if mode not in MODES:
         raise ValueError(f"mode must be one of {MODES}")
@@ -90,9 +92,14 @@ def run_cycle(
 
     cid = lineage.start_cycle(strategy=name, strategy_version=strategy.version, strategy_sha256=sha,
                               mode=mode, git_sha=_git_sha())
+    tag = shadow_tag(data_source)
+    if tag:
+        lineage = TaggedLineage(lineage, tag)
     lineage.record(cid, "inputs", {
         "strategy_path": str(path), "strategy_sha256": sha, "version": strategy.version, "mode": mode,
-        "allow_trading": allow_trading, "flatten": flatten, "started_at": clock().isoformat(), "rules": rules.model_dump(mode="json"),
+        "allow_trading": allow_trading, "flatten": flatten, "started_at": clock().isoformat(),
+        "rules": rules.model_dump(mode="json"),
+        **({"data_source": tag} if tag else {}),
     })
 
     def finish(outcome: str, reasons: list[str], decision: Decision | None = None) -> CycleResult:
@@ -176,7 +183,8 @@ def run_cycle(
                 why = why + [f"{kill_note}; risk-reducing exit allowed"]
             decision = Decision(action="exit", reasons=why, exit_trigger=trigger)
             lineage.record(cid, "decision", decision.model_dump(mode="json"))
-            res = _execute(cid, intent, mode, broker, lineage, rules, name, finish, trigger=trigger)
+            res = _execute(cid, intent, mode, broker, lineage, rules, name, finish, trigger=trigger,
+                           record_only=bool(tag), shadow=tag)
             if kill:
                 res.reasons.append("exit ran while kill switch latched")
                 lineage.annotate_reasons(cid, res.reasons)
@@ -204,7 +212,8 @@ def run_cycle(
             return abstain(why)
         decision = Decision(action="enter", reasons=["all required signals passed"] + why)
         lineage.record(cid, "decision", decision.model_dump(mode="json"))
-        return _execute(cid, intent, mode, broker, lineage, rules, name, finish)
+        return _execute(cid, intent, mode, broker, lineage, rules, name, finish,
+                        record_only=bool(tag), shadow=tag)
     except Exception as exc:  # never crash the scheduler; record and count
         log.exception("cycle %s failed", cid)
         lineage.record(cid, "error", {"type": type(exc).__name__, "message": str(exc)})
@@ -212,8 +221,13 @@ def run_cycle(
 
 
 def _execute(cid, intent: ComboIntent, mode, broker, lineage: Lineage, rules, name, finish, *,
-             trigger: str | None = None) -> CycleResult:
+             trigger: str | None = None, record_only: bool = False, shadow: str | None = None) -> CycleResult:
     lineage.record(cid, "intent", intent.model_dump(mode="json"))
+    if record_only:
+        # Shadow / delayed data: journal the intent, never call broker.place.
+        reason = shadow_refusal(shadow or "cboe_delayed")
+        lineage.record(cid, "order", {"sent": False, "reason": reason})
+        return finish("proposed_not_sent", [reason])
     if lineage.order_exists(intent.idempotency_key):
         return finish("abstained", [f"duplicate idempotency key {intent.idempotency_key}"])
     lineage.insert_order(intent=intent.model_dump(mode="json"), cycle_id=cid, mode=mode, status="proposed")

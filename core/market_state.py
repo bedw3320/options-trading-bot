@@ -165,7 +165,7 @@ class IBMarketState:
 # --- pluggable source -------------------------------------------------------
 # MARKET_DATA_SOURCE (env or `core.cli run --data-source`) picks who supplies quotes/Greeks.
 # Orders, identity and reconcile always stay on IBKR paper; only the snapshot is swapped.
-DATA_SOURCES = ("ib", "alpaca")
+DATA_SOURCES = ("ib", "alpaca", "cboe")
 
 
 def make_provider(source: str, *, ib: Any = None) -> MarketStateProvider:
@@ -180,4 +180,8 @@ def make_provider(source: str, *, ib: Any = None) -> MarketStateProvider:
         from integrations.vendors.alpaca import AlpacaMarketState
 
         return AlpacaMarketState()
+    if src == "cboe":
+        from integrations.vendors.cboe import CboeMarketState
+
+        return CboeMarketState()
     raise ValueError(f"unknown MARKET_DATA_SOURCE {source!r}; expected one of {DATA_SOURCES}")

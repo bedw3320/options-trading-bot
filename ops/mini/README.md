@@ -46,5 +46,7 @@ never `--allow-trading`). Output: `~/Library/Logs/otb-cycle.log`. The last cycle
 (`cycle_id`, `decision`, `reason`). Force one now: `bash ops/mini/cycle.sh --force`; inspect:
 `uv run python -m core.cli explain last`.
 
-Quotes/Greeks source: `MARKET_DATA_SOURCE` in `.env` (`ib` default, or `alpaca` with
-`ALPACA_API_KEY_ID` / `ALPACA_API_SECRET_KEY`). Orders, identity and reconcile stay on IBKR paper.
+Quotes/Greeks source: `MARKET_DATA_SOURCE` in `.env` (`ib` default, `alpaca` with
+`ALPACA_API_KEY_ID` / `ALPACA_API_SECRET_KEY`, or `cboe` for unofficial ~15-min delayed
+JSON). `cboe` is shadow/record-only: the cycle cannot place orders and tags artifacts
+`data_source=cboe_delayed`. Identity and reconcile stay on IBKR paper.

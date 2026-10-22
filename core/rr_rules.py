@@ -13,6 +13,24 @@ from core.signals import dte, snapshot_date, usable
 from schemas.cycle import ComboIntent, ComboLeg, MarketSnapshot, OptionRow
 from schemas.strategy import DeterministicRules
 
+# Keep this fraction of the wing above the long put so a % stop cannot sit
+# at or below the protective strike (where the spread is already ~max loss).
+WING_STOP_REMAINING = 0.25
+
+
+def underlying_stop_level(
+    short_put_strike: float, long_put_strike: float, pct_below_short: float
+) -> float:
+    """SPY stop: short × (1 − pct/100), floored at long + 25% of the wing.
+
+    For a typical $20 SPY wing the 3% rule is ~$22 below the short put and
+    would fire under the long put; the floor keeps the trigger above the wing.
+    """
+    wing = short_put_strike - long_put_strike
+    pct_level = short_put_strike * (1.0 - pct_below_short / 100.0)
+    floor = long_put_strike + WING_STOP_REMAINING * wing
+    return max(pct_level, floor)
+
 
 def spread_pct(row: OptionRow) -> float | None:
     mid = row.mid
@@ -138,7 +156,10 @@ def evaluate_exit(
     expiry = legs[0]["expiry"]
     days = dte(expiry, snapshot_date(snapshot))
     short_put = next(l for l in legs if l["action"] == "SELL" and l["right"] == "P")
-    stop_level = short_put["strike"] * (1 - ex.underlying_stop_pct_below_short_put / 100.0)
+    long_put = next(l for l in legs if l["action"] == "BUY" and l["right"] == "P")
+    stop_level = underlying_stop_level(
+        short_put["strike"], long_put["strike"], ex.underlying_stop_pct_below_short_put,
+    )
     mark = combo_mark(position, snapshot.held_marks)
     pnl = None if mark is None else (mark - position["entry_price"]) * 100.0 * position["quantity"]
 
@@ -147,7 +168,8 @@ def evaluate_exit(
     if snapshot.underlying_price is not None and snapshot.underlying_price <= stop_level:
         return "underlying_stop", mark, [
             f"{rules.underlying} {snapshot.underlying_price:.2f} <= {stop_level:.2f}"
-            f" (short put {short_put['strike']} - {ex.underlying_stop_pct_below_short_put}%)"]
+            f" (short {short_put['strike']} / long {long_put['strike']},"
+            f" max(short-{ex.underlying_stop_pct_below_short_put}%, long+25% wing))"]
     if pnl is None:
         return None, None, ["hold: leg marks unavailable, P&L exits not evaluable"]
     if pnl <= -ex.stop_loss_usd:

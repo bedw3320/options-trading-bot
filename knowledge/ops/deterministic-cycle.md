@@ -12,7 +12,7 @@ Code: `core/cycle.py` (orchestration), `core/signals.py`, `core/rr_rules.py`, `c
 4. Reconcile IB option positions / working orders on SPY vs SQLite. Drift → latch + abstain.
 5. Daily realized loss ≥ $1,500 → latch (no new entries; exits still run).
 6. Market snapshot (IB or fixture). Any data failure (10197, 162, not subscribed, timeout, exception) → `status=unavailable` → abstain with the reason. Never guesses.
-7. Open position → exit rules (time stop 21 DTE, SPY ≤ short put −3%, −$1,250, +$1,000), or `flatten` forces trigger `manual_flatten`.
+7. Open position → exit rules (time stop 21 DTE, SPY ≤ max(short put −3%, long put + 25% of wing), −$1,250, +$1,000), or `flatten` forces trigger `manual_flatten`.
    No position: kill latched → abstain `new entries blocked`; else entry: signals → construction → caps.
 8. Intent → `GuardedBroker.preview_combo` → token → revalidate → BAG limit at mid, DAY. Revalidate: opens need kill not latched, no open
    position, max loss ≤ cap; closes must exactly offset an open strategy position (same legs, SELL, same quantity), else rejected.
@@ -60,7 +60,8 @@ A file lock (`state/cycle.lock`) prevents overlapping cycles.
 - Needs IB option quotes + model Greeks + open interest. Until the 10197 competing-session issue is fixed, every paper cycle abstains with `market_data_unavailable: ib_10197_competing_live_session`.
 - Open interest arrives on generic tick 101 and may lag; a missing OI fails the liquidity check (abstain, by design).
 - Fixtures are SYNTHETIC (Black-Scholes + skew curve, `tests/fixtures/make_spy_fixtures.py`), not market data.
-- rr25 percentile is informational until 60 stored observations; then set `skew_percentile_required: true`.
+- rr25 percentile is informational until 60 stored trading days (latest rr25 per ET day); then set `skew_percentile_required: true`.
+- 25-delta IVs for rr25 / put-call IV ratio are interpolated in |delta| between the bracketing strikes (nearest strike if a side cannot be bracketed).
 - No rolls; the 21-DTE review is a hard close.
 - Exits and `flatten` still need market data (leg marks) to price the limit; with 10197 they abstain like everything else.
 - Not scheduled yet: add a launchd job on the Mini once data works (journal-only first).

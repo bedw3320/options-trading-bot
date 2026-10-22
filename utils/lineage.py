@@ -126,13 +126,14 @@ class Lineage:
         mode: str,
         git_sha: str | None = None,
         cycle_id: str | None = None,
+        started_at: str | None = None,
     ) -> str:
         cid = cycle_id or f"c-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:6]}"
         with self._conn() as c:
             c.execute(
                 "INSERT INTO cycles(cycle_id, strategy, strategy_version, strategy_sha256, mode, started_at, git_sha)"
                 " VALUES (?,?,?,?,?,?,?)",
-                (cid, strategy, strategy_version, strategy_sha256, mode, utc_now_iso(), git_sha),
+                (cid, strategy, strategy_version, strategy_sha256, mode, started_at or utc_now_iso(), git_sha),
             )
         return cid
 
@@ -197,20 +198,34 @@ class Lineage:
         return [r["outcome"] for r in rows]
 
     def signal_history(self, strategy: str, mode: str, name: str, limit: int = 252) -> list[float]:
-        """Past values of one signal (for percentile). Only completed cycles, oldest first."""
+        """Past values of one signal (for percentile). One per ET trading day.
+
+        For each America/New_York date, keep the latest completed cycle that
+        recorded a non-null value (later `started_at`, then later artifact id).
+        Incomplete cycles are ignored. Result is oldest day first; `limit` is
+        the number of days.
+        """
         with self._conn() as c:
             rows = c.execute(
-                "SELECT a.payload_json FROM cycle_artifacts a JOIN cycles c ON a.cycle_id=c.cycle_id"
+                "SELECT a.payload_json, a.id, c.started_at"
+                " FROM cycle_artifacts a JOIN cycles c ON a.cycle_id=c.cycle_id"
                 " WHERE a.kind='signals' AND c.strategy=? AND c.mode=? AND c.ended_at IS NOT NULL"
-                " ORDER BY a.id DESC LIMIT ?",
-                (strategy, mode, limit),
+                " ORDER BY c.started_at ASC, a.id ASC",
+                (strategy, mode),
             ).fetchall()
-        vals: list[float] = []
+        by_day: dict[str, float] = {}
         for r in rows:
+            val = None
             for s in json.loads(r["payload_json"]).get("signals", []):
                 if s.get("name") == name and s.get("value") is not None:
-                    vals.append(float(s["value"]))
-        return list(reversed(vals))
+                    val = float(s["value"])
+                    break
+            if val is None:
+                continue
+            day = datetime.fromisoformat(r["started_at"]).astimezone(ET).date().isoformat()
+            by_day[day] = val
+        days = sorted(by_day)
+        return [by_day[d] for d in days[-limit:]]
 
     # --- positions ----------------------------------------------------------
     def open_positions(self, strategy: str, mode: str) -> list[dict[str, Any]]:

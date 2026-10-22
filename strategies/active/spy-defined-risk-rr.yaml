@@ -36,7 +36,7 @@ entry:
       priority: 7
     - description: "No FOMC decision within 3 calendar days"
       priority: 6
-    - description: "rr25 percentile vs own history >= 75 (informational until 60 observations)"
+    - description: "rr25 percentile vs own daily history >= 75 (informational until 60 trading days)"
       priority: 4
   min_conditions_met: 4
   position_type: long
@@ -45,7 +45,7 @@ exit:
   conditions:
     - description: "Time stop: 21 DTE or less remaining"
       priority: 10
-    - description: "SPY at or below short put strike minus 3%"
+    - description: "SPY at or below the underlying stop (short put minus 3%, floored at long put + 25% of the wing)"
       priority: 10
     - description: "Unrealized loss of $1,250 or more"
       priority: 10
@@ -69,8 +69,8 @@ rules:
     require_iv_over_rv: true
     rv_lookback_days: 20
     skew_percentile_min: 75
-    skew_percentile_required: false   # no history yet; flip after 60 stored cycles
-    skew_percentile_min_history: 60
+    skew_percentile_required: false   # no history yet; flip after 60 stored trading days
+    skew_percentile_min_history: 60   # days; one rr25 per ET day (latest completed cycle)
   structure:
     dte_min: 30
     dte_max: 45
@@ -92,7 +92,7 @@ rules:
     max_entries_per_day: 1
   exits:
     time_stop_dte: 21
-    underlying_stop_pct_below_short_put: 3.0
+    underlying_stop_pct_below_short_put: 3.0   # preferred; floored at long put + 25% of wing
     take_profit_usd: 1000
     stop_loss_usd: 1250
   kill_switch:
@@ -118,3 +118,6 @@ notes:
   - "Deviation from vault: short put alone has large tail risk; v0 adds a $20-lower long put so max loss is defined and capped."
   - "No rolls in v0: the 21-DTE review is a hard close."
   - "A latched kill switch blocks new entries only; rule exits and `core.cli flatten` still run (paper, GuardedBroker). Clear with `core.cli rearm` after review."
+  - "rr25 and the put/call IV ratio use IV linearly interpolated in |delta| between the two strikes that bracket 0.25 on each side; if a side is not bracketable, that side falls back to the nearest listed strike. The signal note records strikes and weights."
+  - "SPY underlying stop is short-put strike minus 3%, floored at long-put strike + 25% of the wing so it always triggers above the protective put. $1,250 loss / $1,000 take-profit / 21-DTE time stop unchanged."
+  - "rr25 percentile history is one observation per ET trading day (the latest completed cycle that day), not one per 15-minute cycle."

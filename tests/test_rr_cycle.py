@@ -20,10 +20,10 @@ from core.guarded_broker import GuardedBroker, GuardedReject
 from core.identity import IdentityError
 from core.market_state import FixtureMarketState, IBMarketState
 from core.reconcile import expected_option_positions
-from core.rr_rules import build_entry, evaluate_exit
-from core.signals import compute_signals, failing_required, realized_vol, skew_percentile
+from core.rr_rules import build_entry, evaluate_exit, underlying_stop_level
+from core.signals import compute_signals, failing_required, iv_at_abs_delta, realized_vol, skew_percentile
 from core.strategy_loader import load
-from schemas.cycle import MarketSnapshot
+from schemas.cycle import MarketSnapshot, OptionRow
 from schemas.strategy import StrategyConfig
 from utils.lineage import Lineage
 
@@ -126,6 +126,52 @@ def test_realized_vol_and_percentile():
     assert skew_percentile(-0.08, [-0.02, -0.04, -0.06, -0.09]) == 75.0
 
 
+def _opt(right, strike, delta, iv, expiry="20261120"):
+    occ = f"SPY{expiry}{right}{int(strike * 1000):08d}"
+    return OptionRow(occ=occ, expiry=expiry, right=right, strike=strike,
+                     bid=1.0, ask=1.1, delta=delta, iv=iv, open_interest=5000)
+
+
+def test_iv_at_abs_delta_oct22_shadow_brackets():
+    """Oct 22 2026 shadow cycle c-20261022T141504Z-c71a41: nearest 745P fails, 740P would pass."""
+    put_lo = _opt("P", 740, -0.2328, 0.1709)
+    put_hi = _opt("P", 745, -0.2640, 0.1646)
+    got = iv_at_abs_delta([put_lo, put_hi], "P", 0.25)
+    assert got is not None and got.method == "interpolated"
+    w_hi = (0.25 - 0.2328) / (0.2640 - 0.2328)
+    assert got.iv == pytest.approx(0.1709 * (1 - w_hi) + 0.1646 * w_hi)
+    assert got.rows[0].strike == 740 and got.rows[1].strike == 745
+    assert got.weights[1] == pytest.approx(w_hi)
+
+
+def test_rr25_interpolates_oct22_example_and_logs_weights(rules):
+    # Nearest listed put is 745P (rr25 = -0.0463, fail). 740P would be -0.0526.
+    # Interpolated put IV sits between them; lineage note records both strikes/weights.
+    call = _opt("C", 780, 0.25, 0.1183)
+    put_lo = _opt("P", 740, -0.2328, 0.1709)
+    put_hi = _opt("P", 745, -0.2640, 0.1646)
+    s = snap()
+    s.options = [call, put_lo, put_hi]
+    s.expiry = "20261120"
+    by = {x.name: x for x in compute_signals(s, rules)}
+    w_hi = (0.25 - 0.2328) / (0.2640 - 0.2328)
+    put_iv = 0.1709 * (1 - w_hi) + 0.1646 * w_hi
+    assert by["rr25"].value == pytest.approx(0.1183 - put_iv, abs=1e-6)
+    assert "interpolated" in by["rr25"].note and "740" in by["rr25"].note and "745" in by["rr25"].note
+    assert "w=" in by["rr25"].note
+    assert by["put_call_iv_ratio"].value == pytest.approx(put_iv / 0.1183, abs=1e-6)
+    assert f"{put_iv:.6f}" in (by["put_call_iv_ratio"].note or "")
+
+
+def test_iv_at_abs_delta_exact_and_nearest_fallback():
+    exact = _opt("P", 740, -0.25, 0.17)
+    assert iv_at_abs_delta([exact], "P", 0.25).method == "exact"
+    only_rich = [_opt("P", 745, -0.30, 0.16), _opt("P", 750, -0.35, 0.15)]
+    fb = iv_at_abs_delta(only_rich, "P", 0.25)
+    assert fb.method == "nearest" and fb.rows[0].strike == 745
+    assert iv_at_abs_delta([], "P", 0.25) is None
+
+
 # --- construction / exits ---------------------------------------------------------
 
 def test_build_entry_defined_risk(rules):
@@ -167,6 +213,51 @@ def test_exit_triggers(rules):
     assert evaluate_exit({**pos, "entry_price": intent.limit_price - 11}, snap(held_marks=marks), rules)[0] == "take_profit"
     trig, _, why = evaluate_exit(pos, snap(held_marks={}), rules)
     assert trig is None and "not evaluable" in why[0]
+
+
+def test_underlying_stop_stays_above_long_put(rules):
+    # Typical $20 wing: 3% of the short strike sits below the long put.
+    assert 735 * 0.97 < 715
+    level = underlying_stop_level(735.0, 715.0, 3.0)
+    assert level == pytest.approx(720.0)  # 715 + 0.25 * 20
+    assert level > 715.0
+    # Wide wing: 3% of spot still applies and remains above the long put.
+    wide = underlying_stop_level(735.0, 635.0, 3.0)
+    assert wide == pytest.approx(735.0 * 0.97)
+    assert wide > 635.0
+
+    intent, why = build_entry(snap(), rules, strategy_name="x", idempotency_key="k")
+    assert intent is not None, why
+    short = next(l for l in intent.legs if l.action == "SELL" and l.right == "P")
+    wing = next(l for l in intent.legs if l.action == "BUY" and l.right == "P")
+    pos = _position(intent, intent.limit_price)
+    marks = {l.occ: (l.bid + l.ask) / 2 for l in intent.legs}
+    stop = underlying_stop_level(short.strike, wing.strike, rules.exits.underlying_stop_pct_below_short_put)
+    assert stop > wing.strike
+    assert short.strike - wing.strike == 20
+    assert evaluate_exit(pos, snap(held_marks=marks, underlying_price=stop - 0.01), rules)[0] == "underlying_stop"
+    assert evaluate_exit(pos, snap(held_marks=marks, underlying_price=stop + 0.01), rules)[0] is None
+    # Dollar and time stops unchanged (see test_exit_triggers).
+
+
+def _seed_rr25(lin: Lineage, cycle_id: str, value: float, started_at: str, mode: str = "dry_run"):
+    lin.start_cycle(strategy=NAME, strategy_version="0.1.0", strategy_sha256="x",
+                    mode=mode, cycle_id=cycle_id, started_at=started_at)
+    lin.record(cycle_id, "signals", {"signals": [{"name": "rr25", "value": value}]})
+    lin.end_cycle(cycle_id, "abstained", ["seed"])
+
+
+def test_signal_history_one_rr25_per_et_day(lin):
+    # Six same-morning cycles would have filled n=6 under per-cycle history.
+    _seed_rr25(lin, "c-d1a", -0.040, "2026-10-19T14:15:00+00:00")  # 10:15 ET
+    _seed_rr25(lin, "c-d1b", -0.041, "2026-10-19T14:30:00+00:00")
+    _seed_rr25(lin, "c-d1c", -0.042, "2026-10-19T15:00:00+00:00")
+    _seed_rr25(lin, "c-d1d", -0.043, "2026-10-19T15:15:00+00:00")
+    _seed_rr25(lin, "c-d1e", -0.044, "2026-10-19T15:30:00+00:00")
+    _seed_rr25(lin, "c-d1f", -0.060, "2026-10-19T16:00:00+00:00")  # latest Oct 19
+    _seed_rr25(lin, "c-d2a", -0.050, "2026-10-20T14:15:00+00:00")
+    _seed_rr25(lin, "c-d2b", -0.055, "2026-10-20T19:00:00+00:00")  # latest Oct 20
+    assert lin.signal_history(NAME, "dry_run", "rr25") == [-0.060, -0.055]
 
 
 # --- full dry-run cycles + lineage ----------------------------------------------------

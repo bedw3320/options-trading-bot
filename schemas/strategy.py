@@ -225,7 +225,13 @@ class SizingRules(BaseModel):
 
 class DeterministicExitRules(BaseModel):
     time_stop_dte: int = Field(default=21, ge=0)
-    underlying_stop_pct_below_short_put: float = Field(default=3.0, ge=0.0, le=20.0)
+    underlying_stop_pct_below_short_put: float = Field(
+        default=3.0,
+        ge=0.0,
+        le=20.0,
+        description="Preferred SPY stop: this percent below the short put. "
+                    "Floored at long put + 25% of the wing so the stop stays above the protective put.",
+    )
     take_profit_usd: float = Field(default=1000.0, gt=0.0)
     stop_loss_usd: float = Field(default=1250.0, gt=0.0)
 

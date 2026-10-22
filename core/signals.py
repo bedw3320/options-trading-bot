@@ -2,11 +2,14 @@
 
 Inputs: one MarketSnapshot (+ own rr25 history). No I/O, no clock reads.
 Convention: rr25 = IV(25d call) - IV(25d put); equities are usually negative.
+25-delta IVs (rr25, put/call IV ratio) are linearly interpolated in |delta|
+between the strikes that bracket 0.25; nearest listed strike if not bracketable.
 """
 
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from datetime import date, datetime
 
 from schemas.cycle import MarketSnapshot, OptionRow, SignalValue
@@ -32,6 +35,49 @@ def nearest_delta(rows: list[OptionRow], right: str, abs_delta: float) -> Option
     if not cands:
         return None
     return min(cands, key=lambda r: (abs(abs(r.delta) - abs_delta), r.strike))
+
+
+@dataclass
+class DeltaIV:
+    """IV at a target |delta|, plus the listed strikes/weights used to get it."""
+
+    iv: float
+    method: str  # interpolated | exact | nearest
+    rows: tuple[OptionRow, ...]
+    weights: tuple[float, ...]
+
+    def describe(self) -> str:
+        parts = [
+            f"{r.occ} d={r.delta:.4f} iv={r.iv:.4f} w={w:.3f}"
+            for r, w in zip(self.rows, self.weights)
+        ]
+        return f"{self.method} iv={self.iv:.4f} ({'; '.join(parts)})"
+
+
+def iv_at_abs_delta(rows: list[OptionRow], right: str, abs_delta: float) -> DeltaIV | None:
+    """IV at |delta| = abs_delta: linear in |delta| on the bracketing strikes.
+
+    Bracket = closest usable strike with |delta| <= target and closest with
+    |delta| >= target. If either side is missing, fall back to nearest_delta.
+    """
+    cands = [r for r in rows if r.right == right and usable(r)]
+    if not cands:
+        return None
+    below = [r for r in cands if abs(r.delta) <= abs_delta]
+    above = [r for r in cands if abs(r.delta) >= abs_delta]
+    if below and above:
+        lo = min(below, key=lambda r: (abs_delta - abs(r.delta), r.strike))
+        hi = min(above, key=lambda r: (abs(r.delta) - abs_delta, r.strike))
+        span = abs(hi.delta) - abs(lo.delta)
+        if span <= 1e-15:
+            return DeltaIV(iv=lo.iv, method="exact", rows=(lo,), weights=(1.0,))
+        w_hi = (abs_delta - abs(lo.delta)) / span
+        iv = lo.iv * (1.0 - w_hi) + hi.iv * w_hi
+        return DeltaIV(iv=iv, method="interpolated", rows=(lo, hi), weights=(1.0 - w_hi, w_hi))
+    near = nearest_delta(cands, right, abs_delta)
+    if near is None:
+        return None
+    return DeltaIV(iv=near.iv, method="nearest", rows=(near,), weights=(1.0,))
 
 
 def realized_vol(closes: list[float], lookback: int) -> float | None:
@@ -65,19 +111,20 @@ def compute_signals(
     rows = [r for r in snapshot.options if r.expiry == snapshot.expiry]
     out: list[SignalValue] = []
 
-    put25 = nearest_delta(rows, "P", sig.target_abs_delta)
-    call25 = nearest_delta(rows, "C", sig.target_abs_delta)
+    put25 = iv_at_abs_delta(rows, "P", sig.target_abs_delta)
+    call25 = iv_at_abs_delta(rows, "C", sig.target_abs_delta)
     rr25: float | None = None
     if put25 and call25:
         rr25 = call25.iv - put25.iv
         out.append(SignalValue(
             name="rr25", value=round(rr25, 6), threshold=sig.max_rr25, passed=rr25 <= sig.max_rr25,
-            note=f"call {call25.occ} iv={call25.iv:.4f} d={call25.delta:.3f}; put {put25.occ} iv={put25.iv:.4f} d={put25.delta:.3f}",
+            note=f"call {call25.describe()}; put {put25.describe()}",
         ))
         ratio = put25.iv / call25.iv
         out.append(SignalValue(
             name="put_call_iv_ratio", value=round(ratio, 6), threshold=sig.min_put_call_iv_ratio,
             passed=ratio >= sig.min_put_call_iv_ratio,
+            note=f"put_iv={put25.iv:.6f} / call_iv={call25.iv:.6f}",
         ))
     else:
         out.append(SignalValue(name="rr25", value=None, threshold=sig.max_rr25, passed=False,
@@ -108,7 +155,7 @@ def compute_signals(
         out.append(SignalValue(
             name="rr25_percentile", value=round(pct, 2), threshold=sig.skew_percentile_min,
             passed=pct >= sig.skew_percentile_min, required=sig.skew_percentile_required,
-            note=f"n={len(hist)}",
+            note=f"n={len(hist)} days",
         ))
     else:
         out.append(SignalValue(

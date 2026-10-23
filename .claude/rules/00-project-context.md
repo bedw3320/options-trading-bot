@@ -14,6 +14,7 @@ Harness law: `LOOP.md`. Isolation: this repo only — no sibling personal projec
 
 ### Key Files
 - `LOOP.md` - Loop constitution (read first)
+- `STATUS.md` - Walking-slice epic status (update in every merged PR)
 - `main.py` - Entry point
 - `core/runner.py` - Main loop
 - `core/agent.py` - PydanticAI agent with tools

@@ -42,6 +42,14 @@ Baseline
 
 ---
 
+## Epic status
+
+Current walking-slice status (Epics 0–4 as used in `core/cycle.py` and PRs #3/#5) lives in
+[`STATUS.md`](STATUS.md). Update that file in every merged PR. The numbered Epic 0–7
+sections below are the long-term plan.
+
+---
+
 ## Epic 0 — Establish the IBKR paper baseline
 
 **Goal:** Prove the repo and Mac Mini can operate predictably against IBKR paper.
@@ -324,5 +332,6 @@ issue bodies and apply the existing `enhancement` label.
 
 ## Immediate next step
 
-Start Epic 0. Do not begin multi-agent work or additional architecture research until
-the first IBKR paper fill is reproducible and traceable.
+See [`STATUS.md`](STATUS.md) (update it in every merged PR). Next walking-slice work is
+Epic 4 (close-out / exits / reconcile / debrief). Do not begin multi-agent work until
+the paper lifecycle is complete.

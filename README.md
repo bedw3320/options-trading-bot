@@ -6,6 +6,8 @@ Paper first. Live only when you deliberately arm it.
 
 **Harness law:** [`LOOP.md`](LOOP.md) — first principles and execution boundaries; read before changing anything that can send an order.
 
+**Current status:** [`STATUS.md`](STATUS.md) — walking-slice epics 0–4 (update in every merged PR).
+
 **Delivery plan:** [`ROADMAP.md`](ROADMAP.md) — walking paper-trading slices through the options edge platform.
 
 ## How it works
@@ -141,6 +143,7 @@ Copy `.env.example` to `.env`:
 
 ```
 LOOP.md                          # Harness constitution (read first)
+STATUS.md                        # Walking-slice epic status (update in every merged PR)
 AGENTS.md                        # Cursor / agent entry
 main.py                          # Entry point
 core/                            # Agent, runner, strategy loader

@@ -87,6 +87,8 @@ Auto-loaded project rules (in `.claude/rules/`):
 - `02-trading-safety.md` - Never trade live without explicit approval
 - `LOOP.md` (repo root) - Harness constitution — wins over the rules above on execution questions
 
+Update [`STATUS.md`](STATUS.md) in every merged PR that advances or closes a walking-slice epic.
+
 ## Key Concepts
 
 ### Strategy Files

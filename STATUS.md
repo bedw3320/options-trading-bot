@@ -10,7 +10,7 @@ Walking-slice names match [PR #3](https://github.com/bedw3320/options-trading-bo
 | **2** Paper readiness / intent gates | done | Identity gate + GuardedBroker preview → token → place | [#3](https://github.com/bedw3320/options-trading-bot/pull/3) |
 | **3** Market state + deterministic signals | in progress | Signals from a real snapshot; IB live-data share unblocked | [#4](https://github.com/bedw3320/options-trading-bot/pull/4), [#5](https://github.com/bedw3320/options-trading-bot/pull/5)/[#6](https://github.com/bedw3320/options-trading-bot/pull/6), [#8](https://github.com/bedw3320/options-trading-bot/pull/8)–[#11](https://github.com/bedw3320/options-trading-bot/pull/11) |
 | **4** Close-out, exits, reconcile/debrief | next | Full paper enter → exit → reconcile → debrief | — |
-| **5** Two-way watchlist RR | next after Epic 4 | Shared watchlist; sell rich skew (puts or calls) only with a written thesis; defined risk; record-only until a human promotes | — |
+| **5** Two-way watchlist RR | next after Epic 4 | Shared watchlist; sell rich skew (puts or calls) only with a written thesis; defined risk; record-only until a human promotes | [#13](https://github.com/bedw3320/options-trading-bot/pull/13) |
 
 **Epic 0 evidence** (2026-10-06): account `DUT116016`. GuardedBroker BUY 1 SPY @ 778.25 (`00025b49.6ac58ef0.01.01`) and SELL 1 SPY @ 778.18 (`00025b49.6ac59033.01.01`). Notes: [`knowledge/ops/2026-10-06-epic0-paper-fill.md`](knowledge/ops/2026-10-06-epic0-paper-fill.md).
 

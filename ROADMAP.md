@@ -46,7 +46,8 @@ Baseline
 
 Current walking-slice status (Epics 0–4 as used in `core/cycle.py` and PRs #3/#5) lives in
 [`STATUS.md`](STATUS.md). Update that file in every merged PR. The numbered Epic 0–7
-sections below are the long-term plan.
+sections below are the long-term plan. Walking-slice Epic 5 (two-way watchlist
+strategy) is in STATUS.md only — it is not this file's Epic 5 (controlled improvement).
 
 ---
 

@@ -1,0 +1,60 @@
+# Shared watchlist for the two-way defined-risk skew strategy.
+#
+# Not a StrategyConfig. The runner and core/cycle.py do not load this file.
+# Will, the partner (experienced options trader), and the operator maintain
+# it together. A name may trade only when a written human thesis agrees with
+# the rich side of that name's skew, and only as defined risk.
+#
+# New names start as record_only: log the signal and what the structure would
+# have paid; no orders. A human promotes to active after a sample exists.
+#
+# Schema (one object per name under `names:`):
+#   ticker:              str
+#   allowed_direction:   bullish | bearish | both
+#                          bullish = sell puts (defined-risk)
+#                          bearish = sell calls (defined-risk)
+#                          both    = either side, only when that side is rich
+#                                    and the written thesis agrees
+#   thesis:              str — written by a human; required; no thesis, no trade
+#   financing_dependence: str — debt, capex, refinancing dates; human-written,
+#                          not computed. Use TBD when unknown. Do not invent.
+#   events_to_avoid:     list[str] — earnings, lockups, secondaries/converts;
+#                          FOMC for index names
+#   status:              active | record_only
+#   added_by:            str
+#   added_on:            YYYY-MM-DD
+#
+# Data only. This file does not place trades.
+
+names:
+  - ticker: SPY
+    allowed_direction: bullish
+    thesis: >
+      When SPY put skew is rich, sell a defined-risk put (short put + long put
+      wing) and use the credit toward an OTM call. Existing paper strategy:
+      strategies/active/spy-defined-risk-rr.yaml.
+    financing_dependence: >
+      Not applicable — SPY is an index ETF, not an issuer. No debt, capex, or
+      refinancing calendar.
+    events_to_avoid:
+      - "FOMC decision days (see strategies/active/spy-defined-risk-rr.yaml rules.events)"
+    status: active
+    added_by: Will
+    added_on: "2026-10-26"
+
+  - ticker: CRWV
+    allowed_direction: bearish
+    thesis: >
+      Partner example, early October 2026: calls were rich, rates were rising
+      fast, and CRWV depends on financing. Structure used: long put, short call,
+      long call wing above the short call (defined-risk bearish risk reversal).
+    financing_dependence: >
+      Depends on financing (partner thesis). Debt amounts, capex, and
+      refinancing dates: TBD.
+    events_to_avoid:
+      - "earnings: TBD"
+      - "lockups: TBD"
+      - "secondaries/converts: TBD"
+    status: record_only
+    added_by: partner
+    added_on: "2026-10-26"

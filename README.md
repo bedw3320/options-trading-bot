@@ -9,18 +9,18 @@ Stocks. Options. Crypto. Paper trade first, go live when you're ready.
 You write a strategy as a simple YAML file:
 
 ```yaml
-name: hype-volume-options
-description: Detect social media hype driving unusual options volume, ride the momentum
+name: skew-risk-reversal
+description: Exploit put IV skew on mid/small-cap equities by selling OTM puts to finance long OTM calls
 
 entry:
   conditions:
-    - description: "Social media mentions surging with bullish sentiment"
-      priority: 8
-    - description: "Call option volume is 2x+ the 20-day average"
+    - description: "Risk reversal prices at a net credit: OTM put premium exceeds OTM call cost"
+      priority: 10
+    - description: "Put IV skew is rich relative to call IV"
       priority: 9
-    - description: "RSI(14) between 40-70 — room to run, not overbought"
-      priority: 5
-  min_conditions_met: 2
+    - description: "Sufficient options liquidity: OI > 100 on target strikes"
+      priority: 10
+  min_conditions_met: 4
 ```
 
 The bot reads the strategy, fetches the data it needs, and hands everything to a PydanticAI agent that decides whether to trade. Entry/exit conditions are natural language — the AI interprets them with judgment, not rigid if/else logic.
@@ -40,7 +40,7 @@ cp .env.example .env
 # Edit .env with your API keys (Alpaca, Anthropic, etc.)
 
 # Run with an example strategy (paper mode, no live trades)
-uv run python main.py --strategy strategies/examples/sol-momentum.yaml
+uv run python main.py --strategy strategies/examples/skew-risk-reversal.yaml
 
 # Run tests
 uv run pytest tests/ -v
@@ -69,8 +69,7 @@ Strategies live in `strategies/` as YAML files:
 ```
 strategies/
   examples/
-    sol-momentum.yaml          # News-driven crypto (ported from original bot)
-    hype-volume-options.yaml   # Social hype -> options flow -> momentum
+    skew-risk-reversal.yaml    # Put IV skew -> risk reversals on mid/small-cap equities
   active/                      # Drop strategies here to run them
   _schema.yaml                 # Full reference of all fields
 ```
@@ -153,7 +152,7 @@ strategies/                      # Your trading strategies (YAML)
 
 Fork it, break it, make it better. PRs welcome.
 
-This started as a minimal SOL crypto bot and grew into a multi-asset platform. The framework is designed to support any strategy — the ones included are just examples to get you started.
+This started as a minimal trading bot and grew into a multi-asset platform. The framework is designed to support any strategy — the one included is just an example to get you started.
 
 ---
 

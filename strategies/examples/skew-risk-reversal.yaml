@@ -1,0 +1,201 @@
+# Skew Risk Reversal Strategy
+# Sell OTM puts to finance long OTM calls on mid/small-cap equities where put IV skew is rich
+
+name: skew-risk-reversal
+version: "1.0.0"
+description: >
+  Exploit put IV skew on mid/small-cap equities by selling OTM puts to finance
+  long OTM calls (risk reversals). The thesis is that put skew on less-followed
+  names is inefficiently priced by institutions, creating opportunities to enter
+  risk reversals at a net credit. The agent selects strikes to maximize skew
+  differential and manages exits/rolls with full discretion. Large-cap names
+  are eligible only when realized vol spikes to 2x the 20-day average.
+  Paper trading with generous limits to let the agent iterate and build confidence.
+
+asset_universe:
+  asset_classes:
+    - option
+    - equity  # Equity for assignment scenarios
+  tickers: []  # Dynamic universe - discovered via web search and options flow
+  filters:
+    - "Mid-cap and small-cap US equities with liquid options chains"
+    - "Large-caps only if realized volatility > 2x the 20-day average"
+    - "Open interest > 100 on target strikes"
+    - "Avoid tickers with wide bid-ask spreads (> 10% of mid price)"
+
+schedule:
+  frequency: "every 15 minutes"
+  active_sessions:
+    - market_hours
+  timezone: "US/Eastern"
+
+data_requirements:
+  - source: options_flow
+    params:
+      min_volume_ratio: 1.5
+  - source: ohlcv
+    params:
+      timeframe: "1D"
+      bars: 60
+  - source: technicals
+    params:
+      indicators:
+        - name: RSI
+          period: 14
+        - name: SMA
+          period: 20
+        - name: SMA
+          period: 50
+        - name: ATR
+          period: 14
+        - name: BBANDS
+          period: 20
+        - name: VOLUME_RATIO
+          lookback: 20
+  - source: news
+    params:
+      keywords:
+        - "volatility"
+        - "options"
+        - "earnings"
+        - "FDA"
+        - "merger"
+      max_age_hours: 48
+  - source: web_search
+    params:
+      queries:
+        - "unusual options activity small cap"
+        - "put skew rich equities"
+        - "{ticker} options flow analysis"
+  - source: social
+    params:
+      subreddits:
+        - options
+        - wallstreetbets
+        - stocks
+      keywords:
+        - "risk reversal"
+        - "skew"
+        - "puts"
+        - "calls"
+        - "volatility"
+
+entry:
+  conditions:
+    - description: >
+        Risk reversal prices at a net credit: the OTM put premium collected
+        exceeds the OTM call cost. The agent should optimize strike selection
+        to maximize the credit received while maintaining reasonable delta
+        exposure. Target 30-60+ DTE contracts (use max_dte=90 when querying
+        options chains).
+      priority: 10
+    - description: >
+        Put IV skew is rich relative to call IV: the put side of the skew
+        curve is elevated compared to equidistant OTM calls. Evaluate this
+        by comparing option premiums across the chain at similar distances
+        from the current price. OI distribution can also signal skew richness.
+      priority: 9
+    - description: >
+        Sufficient options liquidity: open interest > 100 on both the target
+        put and call strikes. Bid-ask spread should be reasonable (not wider
+        than 10% of the mid price). Avoid illiquid strikes.
+      priority: 10
+    - description: >
+        Underlying shows neutral-to-bullish technicals: price above SMA(50),
+        RSI(14) between 40-65, not in a downtrend. The risk reversal is a
+        bullish structure so avoid putting it on in confirmed downtrends.
+      priority: 7
+    - description: >
+        No imminent adverse catalysts: no earnings within 7 days (unless the
+        skew is specifically an earnings play), no pending FDA decisions,
+        no major litigation. News and social sentiment should be neutral
+        to positive.
+      priority: 6
+  min_conditions_met: 4
+  position_type: long
+
+exit:
+  conditions:
+    - description: >
+        Skew normalization: the put-call skew differential that justified
+        entry has collapsed. The risk reversal is no longer priced favorably.
+        Close both legs to capture the skew mean-reversion profit.
+      priority: 9
+    - description: >
+        Trailing stop on the long call leg: if the call has appreciated
+        significantly, use a trailing stop to lock in gains. Agent discretion
+        on the trail distance based on ATR and vol regime.
+      priority: 7
+    - description: >
+        Short put approaches or goes ITM: this is a roll trigger, not a
+        close signal. Roll the put to a later expiry and/or lower strike.
+        If the roll cannot be done for a credit, agent decides whether to
+        close the put leg, accept assignment, or close the entire position.
+      priority: 10
+    - description: >
+        DTE threshold: if either leg has < 14 DTE, evaluate for roll or
+        close. Avoid holding short options into the last two weeks unless
+        the position is well out-of-the-money and theta is working strongly
+        in your favor.
+      priority: 8
+    - description: >
+        Assignment risk management: if the short put is assigned, the agent
+        now holds shares. Evaluate whether the long thesis supports holding
+        the shares (keep the call as upside). If not, sell shares and close
+        the call. In live trading, assignment acceptance requires user approval.
+      priority: 10
+    - description: >
+        Adverse regime change: volatility regime shifts (VIX spike > 30,
+        broad market selloff), liquidity dries up (widening spreads), or
+        ticker-specific negative catalyst emerges. Close or hedge the position.
+      priority: 8
+  min_conditions_met: 1
+
+risk:
+  max_position_pct: 15.0       # Generous for paper testing - iterate down
+  max_total_exposure_pct: 80.0  # Paper trading ceiling - reduce for live
+  # stop_loss_pct: omitted - agent discretion based on Greeks/price action
+  # take_profit_pct: omitted - trailing stop on call, skew normalization exit
+  max_daily_trades: 50          # Effectively unlimited, portfolio limits govern
+  confidence_threshold: 0.80
+
+notes:
+  - >
+    SKEW THESIS: Put IV skew on mid/small-cap equities is often richer than
+    efficient pricing would suggest, because institutional hedging demand
+    concentrates on the put side while retail call buying is less aggressive
+    on smaller names. This creates a structural edge for selling puts to
+    finance calls.
+  - >
+    STRIKE SELECTION: The agent has full discretion on strike selection.
+    Optimize for the best skew differential that still produces a net credit.
+    Consider delta targets around 0.25-0.35 for the put and 0.20-0.30 for
+    the call as starting points, but adjust based on the specific skew shape.
+  - >
+    ROLL MECHANICS: Rolling = close existing position + open new position
+    (two separate orders). When rolling the short put, target a later expiry
+    at the same or lower strike for a net credit. If a credit roll isn't
+    available, the agent decides: close the leg, widen the roll, or accept
+    the debit based on overall position P&L.
+  - >
+    ASSIGNMENT HANDLING: If the short put is assigned, the agent holds shares.
+    Default action is to roll (sell a new put against the shares, creating a
+    covered position). Accept assignment only if the agent confirms the long
+    thesis still holds. In live trading, assignment acceptance requires
+    explicit user approval.
+  - >
+    RISK LIMITS ARE INTENTIONALLY LOOSE: 15% per position and 80% total
+    exposure are generous for paper trading. The goal is to let the agent
+    take enough positions to learn from the skew dynamics. These will be
+    tightened significantly (5% position, 30% exposure) before live trading.
+  - >
+    DISCOVERY LIMITATION: No built-in screener for finding candidates. The
+    agent uses web_search to discover tickers with rich put skew. A proper
+    screener framework is planned for future development.
+  - >
+    OPTIONS DATA NOTE: The options chain tool provides contract metadata
+    including strike, expiry, and OI. Use max_dte=90 when fetching chains
+    to cover the 30-60+ DTE target window. The agent's runtime tool can
+    access bid/ask data for skew evaluation.
+  - "Paper trade extensively before considering live execution"
+  - "Max 10 simultaneous positions to maintain focus and trackability"

@@ -13,7 +13,7 @@ from schemas.deps import Deps
 
 # defaults
 DEFAULT_MODEL = "anthropic:claude-sonnet-4-5-20250929"
-DEFAULT_STRATEGY = "strategies/examples/sol-momentum.yaml"
+DEFAULT_STRATEGY = "strategies/examples/skew-risk-reversal.yaml"
 DB_PATH = "state/state.db"
 
 

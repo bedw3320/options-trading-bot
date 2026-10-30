@@ -100,13 +100,13 @@ The PydanticAI agent has tools for: web search, account info, positions, orders,
 ```bash
 uv sync                          # Install dependencies
 uv run pytest tests/ -v          # Run tests
-uv run python -c "from core.strategy_loader import load; print(load('strategies/examples/sol-momentum.yaml').name)"
+uv run python -c "from core.strategy_loader import load; print(load('strategies/examples/skew-risk-reversal.yaml').name)"
 
 # Run with a strategy (paper mode, trading disabled by default)
-TRADING_MODE=paper uv run python main.py --strategy strategies/examples/sol-momentum.yaml
+TRADING_MODE=paper uv run python main.py --strategy strategies/examples/skew-risk-reversal.yaml
 
 # Enable paper trading
-TRADING_MODE=paper uv run python main.py --strategy strategies/examples/sol-momentum.yaml --allow-trading
+TRADING_MODE=paper uv run python main.py --strategy strategies/examples/skew-risk-reversal.yaml --allow-trading
 ```
 
 ## Environment Variables

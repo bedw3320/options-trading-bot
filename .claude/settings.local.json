@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh repo rename:*)",
+      "Bash(git remote set-url:*)",
+      "Bash(uv lock:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(claude plugins:*)",
+      "Bash(git clone:*)",
+      "Bash(git -C ~/.claude/plugins/marketplaces/agenticnotetaking rev-parse:*)",
+      "Bash(for target in \"60-90 DTE suitable for macro EM thesis plays targeting 20 percent moves\" \"CBOE SKEW index is free via Barchart and useful as macro regime filter for SPX\")",
+      "Bash(do)",
+      "Bash(if [ ! -f \"$target.md\" ])",
+      "Bash(then)",
+      "Bash(echo:*)",
+      "Bash(fi)",
+      "Bash(done)",
+      "Bash(grep:*)",
+      "Bash(ls:*)",
+      "Bash(for f in *.md)",
+      "Bash(if ! grep -q \"^description:\" \"$f\")",
+      "Bash(if ! grep -q \"^type: moc\" \"$f\")",
+      "Bash(! grep -q \"^category:\" \"$f\")",
+      "Bash(if ! grep -q \"^created:\" \"$f\")",
+      "Bash(! grep -q \"^topics:\" \"$f\")",
+      "mcp__firecrawl__firecrawl_scrape"
+    ]
+  }
+}

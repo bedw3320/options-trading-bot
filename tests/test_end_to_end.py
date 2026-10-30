@@ -14,68 +14,62 @@ from schemas.market import MarketSnapshot, TickerSnapshot
 from schemas.strategy import StrategyConfig
 
 
-class TestHypeVolumeOptions:
-    """End-to-end tests for the hype-volume-options strategy."""
+class TestSkewRiskReversal:
+    """End-to-end tests for the skew-risk-reversal strategy."""
 
     def test_loads_and_validates(self):
-        strategy = load("strategies/examples/hype-volume-options.yaml")
-        assert strategy.name == "hype-volume-options"
-        assert strategy.version == "1.0.0"
+        strategy = load("strategies/examples/skew-risk-reversal.yaml")
+        assert strategy.name == "skew-risk-reversal"
 
     def test_asset_universe(self):
-        strategy = load("strategies/examples/hype-volume-options.yaml")
-        assert "equity" in strategy.asset_universe.asset_classes
+        strategy = load("strategies/examples/skew-risk-reversal.yaml")
         assert "option" in strategy.asset_universe.asset_classes
+        assert "equity" in strategy.asset_universe.asset_classes
         assert strategy.asset_universe.tickers == []  # dynamic universe
         assert len(strategy.asset_universe.filters) > 0
 
     def test_data_requirements(self):
-        strategy = load("strategies/examples/hype-volume-options.yaml")
+        strategy = load("strategies/examples/skew-risk-reversal.yaml")
         sources = [d.source for d in strategy.data_requirements]
-        assert "social" in sources
         assert "options_flow" in sources
         assert "ohlcv" in sources
         assert "technicals" in sources
         assert "news" in sources
         assert "web_search" in sources
+        assert "social" in sources
 
     def test_entry_conditions(self):
-        strategy = load("strategies/examples/hype-volume-options.yaml")
+        strategy = load("strategies/examples/skew-risk-reversal.yaml")
         assert len(strategy.entry.conditions) == 5
-        assert strategy.entry.min_conditions_met == 3
+        assert strategy.entry.min_conditions_met == 4
         assert strategy.entry.position_type == "long"
-        # Highest priority should be options volume
-        priorities = [c.priority for c in strategy.entry.conditions]
-        assert max(priorities) >= 8
 
     def test_exit_conditions(self):
-        strategy = load("strategies/examples/hype-volume-options.yaml")
-        assert len(strategy.exit.conditions) >= 5
+        strategy = load("strategies/examples/skew-risk-reversal.yaml")
+        assert len(strategy.exit.conditions) == 6
         assert strategy.exit.min_conditions_met == 1
-        # Stop loss and take profit should be priority 10
+        # Assignment risk and short put ITM should be priority 10
         p10 = [c for c in strategy.exit.conditions if c.priority == 10]
         assert len(p10) >= 2
 
     def test_risk_parameters(self):
-        strategy = load("strategies/examples/hype-volume-options.yaml")
-        assert strategy.risk.max_position_pct == 3.0
-        assert strategy.risk.stop_loss_pct == 8.0
-        assert strategy.risk.take_profit_pct == 25.0
+        strategy = load("strategies/examples/skew-risk-reversal.yaml")
+        assert strategy.risk.max_position_pct == 15.0
+        assert strategy.risk.stop_loss_pct is None
+        assert strategy.risk.take_profit_pct is None
         assert strategy.risk.confidence_threshold == 0.80
-        assert strategy.risk.max_daily_trades == 5
+        assert strategy.risk.max_daily_trades == 50
 
     def test_prompt_generation(self):
-        strategy = load("strategies/examples/hype-volume-options.yaml")
+        strategy = load("strategies/examples/skew-risk-reversal.yaml")
         prompt = build_strategy_prompt(strategy)
-        assert "hype-volume-options" in prompt
-        assert "Social media mention surge" in prompt
-        assert "Unusual options volume" in prompt
+        assert "skew-risk-reversal" in prompt
+        assert "skew" in prompt.lower()
+        assert "risk reversal" in prompt.lower()
         assert "confidence" in prompt.lower()
-        assert "equity" in prompt
-        assert "option" in prompt
 
     def test_prompt_with_market_state(self):
-        strategy = load("strategies/examples/hype-volume-options.yaml")
+        strategy = load("strategies/examples/skew-risk-reversal.yaml")
         state = {
             "positions": {
                 "AAPL": {"qty": "5", "side": "long", "unrealized_pl": "150.00"},
@@ -85,29 +79,15 @@ class TestHypeVolumeOptions:
             },
             "data": {
                 "AAPL": {
-                    "RSI(14)": 62.5,
-                    "VOLUME_RATIO(20)": 2.3,
-                    "social_mentions": 45,
+                    "RSI(14)": 52.3,
+                    "SMA(50)": 178.50,
+                    "ATR(14)": 3.2,
                 }
             },
         }
         prompt = build_strategy_prompt(strategy, market_state=state)
         assert "AAPL" in prompt
         assert "long" in prompt
-        assert "RSI(14)" in prompt
-
-
-class TestSolMomentum:
-    """Verify the ported SOL strategy works end-to-end."""
-
-    def test_loads(self):
-        strategy = load("strategies/examples/sol-momentum.yaml")
-        assert strategy.name == "sol-momentum"
-        assert "crypto" in strategy.asset_universe.asset_classes
-
-    def test_crypto_sessions(self):
-        strategy = load("strategies/examples/sol-momentum.yaml")
-        assert "24/7" in strategy.schedule.active_sessions
 
 
 class TestAllStrategies:
@@ -115,10 +95,9 @@ class TestAllStrategies:
 
     def test_load_all_examples(self):
         strategies = load_all("strategies/examples")
-        assert len(strategies) >= 2
+        assert len(strategies) >= 1
         names = [s.name for s in strategies]
-        assert "sol-momentum" in names
-        assert "hype-volume-options" in names
+        assert "skew-risk-reversal" in names
 
     def test_all_strategies_generate_prompts(self):
         strategies = load_all("strategies/examples")

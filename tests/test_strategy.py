@@ -74,13 +74,14 @@ def test_load_yaml_file():
     Path(path).unlink()
 
 
-def test_load_sol_momentum():
-    config = load("strategies/examples/sol-momentum.yaml")
-    assert config.name == "sol-momentum"
-    assert "crypto" in config.asset_universe.asset_classes
-    assert config.asset_universe.tickers == ["SOL/USD"]
-    assert len(config.data_requirements) == 3
-    assert config.risk.stop_loss_pct == 5.0
+def test_load_skew_risk_reversal():
+    config = load("strategies/examples/skew-risk-reversal.yaml")
+    assert config.name == "skew-risk-reversal"
+    assert "option" in config.asset_universe.asset_classes
+    assert "equity" in config.asset_universe.asset_classes
+    assert config.asset_universe.tickers == []
+    assert len(config.data_requirements) == 6
+    assert config.risk.stop_loss_pct is None
 
 
 def test_load_nonexistent_file():
@@ -100,7 +101,7 @@ def test_load_bad_extension():
 def test_load_all_from_directory():
     strategies = load_all("strategies/examples")
     assert len(strategies) >= 1
-    assert any(s.name == "sol-momentum" for s in strategies)
+    assert any(s.name == "skew-risk-reversal" for s in strategies)
 
 
 def test_build_strategy_prompt():

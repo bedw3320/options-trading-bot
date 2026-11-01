@@ -10,6 +10,7 @@
     uv run python -m core.cli list --limit 1 --json         # last cycle summary (heartbeat)
     uv run python -m core.cli list
     uv run python -m core.cli reconcile                     # paper: IB vs SQLite, no orders
+    uv run python -m core.cli debrief last                  # last closed-trade debrief
     uv run python -m core.cli kill --reason "manual"        # latch (blocks entries); `rearm` to clear
     uv run python -m core.cli flatten --allow-trading       # paper: close the open strategy position now
     uv run python -m core.cli flatten --dry-run             # same against fixtures + SimBroker
@@ -103,7 +104,9 @@ def cmd_run(args) -> int:
             try:
                 result = run_cycle(
                     args.strategy, mode="paper", provider=make_provider(src, ib=ib),
-                    broker=IBExecution(ib, allow_trading=allow), lineage=lineage, allow_trading=allow,
+                    broker=IBExecution(ib, allow_trading=allow,
+                                       expected_account_id=os.environ.get("IB_ACCOUNT_ID") or None),
+                    lineage=lineage, allow_trading=allow,
                     identity_check=lambda: assert_paper_identity(ib, trading_mode="paper").account_id,
                     flatten=getattr(args, "flatten", False), data_source=src,
                 )
@@ -158,8 +161,24 @@ def explain(cycle: dict) -> str:
                        + (f" reason={p['reason']}" if p.get("reason") else ""))
         elif k == "fill":
             out.append(f"  fill: status={p.get('status')} avg={p.get('avg_fill_price')} n_fills={len(p.get('fills', []))}")
+            for f in p.get("fills") or []:
+                out.append(f"    exec={f.get('exec_id')} qty={f.get('qty')} price={f.get('price')}"
+                           f" time_utc={f.get('time_utc')}")
+        elif k == "mark_to_market":
+            out.append(f"  mtm: {p.get('underlying')}={p.get('underlying_price')} DTE={p.get('dte')}"
+                       f" net={p.get('net_mark')} uPnL=${p.get('unrealized_pnl_usd')}"
+                       f" daily={p.get('daily_realized_pnl_usd')}/{p.get('daily_loss_limit_usd')}")
+            for leg in p.get("legs") or []:
+                out.append(f"    {leg.get('action')} {leg.get('occ')} mark={leg.get('mark')}"
+                           f" signed={leg.get('signed_mark')}")
+        elif k == "debrief":
+            out.append(f"  debrief: opened={p.get('opened_cycle_id')} trigger={p.get('exit_trigger')}"
+                       f" pnl=${p.get('realized_pnl_usd')} hold={p.get('holding_period_seconds')}s")
+            out.append(f"    entry: {p.get('entry_reason')}")
+            out.append(f"    exit: {p.get('exit_reason')}")
         elif k == "reconcile":
-            out.append(f"  reconcile[{p.get('phase')}]: ok={p.get('ok')} broker={p.get('broker')} drift={p.get('drift')}")
+            out.append(f"  reconcile[{p.get('phase')}]: ok={p.get('ok')} mismatch={p.get('mismatch')}"
+                       f" broker={p.get('broker')} drift={p.get('drift')}")
         elif k in ("error", "kill_switch"):
             out.append(f"  {k}: {p}")
     return "\n".join(out)
@@ -224,14 +243,40 @@ def cmd_reconcile(args) -> int:
     from utils.lineage import Lineage
 
     strategy = load(args.strategy)
+    account = os.environ.get("IB_ACCOUNT_ID") or None
     ib = _connect_paper(strategy.rules, allow_trading=False)
     try:
-        rec = reconcile(IBExecution(ib, allow_trading=False), Lineage(args.db), strategy=strategy.name,
-                        mode="paper", underlying=strategy.rules.underlying)
+        rec = reconcile(
+            IBExecution(ib, allow_trading=False, expected_account_id=account),
+            Lineage(args.db), strategy=strategy.name, mode="paper",
+            underlying=strategy.rules.underlying, account_id=account,
+        )
     finally:
         ib.disconnect()
     print(json.dumps(rec, indent=2, default=str))
     return 0 if rec["ok"] else 1
+
+
+def cmd_debrief(args) -> int:
+    from utils.lineage import Lineage
+
+    rec = Lineage(args.db).get_debrief(args.cycle_id)
+    if rec is None:
+        print(f"no debrief for {args.cycle_id}", file=sys.stderr)
+        return 2
+    print(json.dumps(rec.get("payload") or rec, indent=2, default=str) if args.json else _fmt_debrief(rec))
+    return 0
+
+
+def _fmt_debrief(rec: dict) -> str:
+    p = rec.get("payload") or rec
+    return "\n".join([
+        f"debrief cycle={p.get('cycle_id')} opened={p.get('opened_cycle_id')} position={p.get('position_id')}",
+        f"  entry: {p.get('entry_reason')}",
+        f"  exit:  {p.get('exit_reason')} ({p.get('exit_trigger')})",
+        f"  pnl:   ${p.get('realized_pnl_usd')}  hold={p.get('holding_period_seconds')}s",
+        f"  times: {p.get('opened_at')} -> {p.get('closed_at')}",
+    ])
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -288,6 +333,11 @@ def main(argv: list[str] | None = None) -> int:
     rc = sub.add_parser("reconcile")
     rc.add_argument("--strategy", default=DEFAULT_STRATEGY)
     rc.set_defaults(fn=cmd_reconcile)
+
+    db = sub.add_parser("debrief", help="print the per-trade debrief (keyed by closing cycle_id)")
+    db.add_argument("cycle_id", nargs="?", default="last")
+    db.add_argument("--json", action="store_true")
+    db.set_defaults(fn=cmd_debrief)
 
     args = p.parse_args(argv)
     return args.fn(args)

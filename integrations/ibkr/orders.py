@@ -10,27 +10,31 @@ from ib_insync import IB, LimitOrder, MarketOrder, Stock, Crypto, Option, Trade
 from integrations.ibkr.occ import option_from_occ, parse_occ_symbol
 from integrations.ibkr.option_quotes import resolve_order_price, ticker_ready_for_order, wait_until
 from utils.logging import get_logger
-from utils.time_et import format_time_et, ib_exec_time_to_et
+from utils.time_et import format_time_et, ib_exec_time_to_et, ib_exec_time_to_utc
 
 log = get_logger(__name__)
 
 
 def fill_to_record(fill: Any) -> dict[str, Any]:
-    """IB execution.time is UTC; persist time_et."""
+    """IB execution.time is UTC; persist time_utc (labeled) and derived time_et."""
     exe = getattr(fill, "execution", None)
     raw_time = getattr(exe, "time", None) if exe is not None else None
     if raw_time is None:
         raw_time = getattr(fill, "time", None)
+    utc = ib_exec_time_to_utc(raw_time)
     et = ib_exec_time_to_et(raw_time)
     contract = getattr(fill, "contract", None)
+    shares = getattr(exe, "shares", None) if exe is not None else None
     return {
         "exec_id": getattr(exe, "execId", None) if exe is not None else None,
         "order_id": str(getattr(exe, "orderId", "") or "") if exe is not None else None,
         "symbol": getattr(contract, "symbol", None),
         "side": getattr(exe, "side", None) if exe is not None else None,
-        "shares": getattr(exe, "shares", None) if exe is not None else None,
+        "shares": shares,
+        "qty": shares,
         "price": getattr(exe, "price", None) if exe is not None else None,
         "exchange": getattr(exe, "exchange", None) if exe is not None else None,
+        "time_utc": utc.isoformat(timespec="seconds") if utc else None,
         "time_et": et.isoformat() if et else format_time_et(raw_time),
     }
 

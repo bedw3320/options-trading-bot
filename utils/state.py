@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from utils.time_et import format_time_et
+from utils.time_et import format_time_et, format_time_utc
 
 DEFAULT_STATE: dict[str, Any] = {"orders": {}, "positions": {}, "meta": {}}
 
@@ -119,13 +119,16 @@ def record_fills(
     state_key: str,
     fills: list[dict[str, Any]],
 ) -> None:
-    """Append fill events. IB times are UTC; payload always includes time_et."""
+    """Append fill events. IB times are UTC; payload labels time_utc and time_et."""
     for fill in fills:
         payload = dict(fill)
+        src = payload.get("time") or payload.get("time_utc")
+        if src and not payload.get("time_utc"):
+            payload["time_utc"] = format_time_utc(src)
         if not payload.get("time_et"):
-            payload["time_et"] = format_time_et(
-                payload.get("time") or payload.get("time_utc")
-            )
+            payload["time_et"] = format_time_et(src)
+        if payload.get("qty") is None and payload.get("shares") is not None:
+            payload["qty"] = payload["shares"]
         append_event(db_path, state_key, "fill", payload)
 
 

@@ -61,6 +61,18 @@ def summarize(cycle: dict[str, Any]) -> str:
         lines.append(f"  decision: {dec.get('action')}{extra}")
     for r in reasons[:6]:
         lines.append(f"  reason: {r}")
+    mtm = _art(cycle, "mark_to_market")
+    if mtm:
+        lines.append(
+            f"  mtm: {mtm.get('underlying')}={mtm.get('underlying_price')} DTE={mtm.get('dte')} "
+            f"uPnL=${mtm.get('unrealized_pnl_usd')} daily={mtm.get('daily_realized_pnl_usd')}"
+        )
+    debrief = _art(cycle, "debrief")
+    if debrief:
+        lines.append(
+            f"  debrief: opened={debrief.get('opened_cycle_id')} {debrief.get('exit_trigger')} "
+            f"pnl=${debrief.get('realized_pnl_usd')} hold={debrief.get('holding_period_seconds')}s"
+        )
     snap = _art(cycle, "market_snapshot")
     if snap:
         lines.append(

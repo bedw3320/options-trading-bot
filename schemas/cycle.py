@@ -93,3 +93,50 @@ class Decision(BaseModel):
     action: Literal["enter", "exit", "abstain"]
     reasons: list[str] = Field(min_length=1)
     exit_trigger: str | None = None
+
+
+class LegMark(BaseModel):
+    """One held leg at the current mid. signed_mark is +mid if long, −mid if short."""
+
+    occ: str
+    action: Literal["BUY", "SELL"]
+    right: Literal["C", "P"]
+    strike: float
+    expiry: str
+    mark: float | None = None
+    signed_mark: float | None = None
+    signed_value_usd: float | None = None
+
+
+class MarkToMarket(BaseModel):
+    """Per-structure mark: per-leg mids, net P&L vs entry, DTE, underlying."""
+
+    position_id: str
+    opened_cycle_id: str | None = None
+    underlying: str
+    underlying_price: float | None = None
+    expiry: str | None = None
+    dte: int | None = None
+    quantity: int
+    entry_price: float
+    net_mark: float | None = None
+    unrealized_pnl_usd: float | None = None
+    legs: list[LegMark] = Field(default_factory=list)
+    daily_realized_pnl_usd: float = 0.0
+    daily_loss_limit_usd: float | None = None
+    daily_loss_breach: bool = False
+
+
+class TradeDebrief(BaseModel):
+    """One closed trade, keyed by the closing cycle_id, linked to the open cycle."""
+
+    cycle_id: str
+    opened_cycle_id: str
+    position_id: str
+    entry_reason: str
+    exit_reason: str
+    exit_trigger: str | None = None
+    realized_pnl_usd: float
+    holding_period_seconds: int
+    opened_at: str
+    closed_at: str

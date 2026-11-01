@@ -62,3 +62,15 @@ def ib_exec_time_to_et(value: datetime | date | str | None) -> datetime | None:
 def format_time_et(value: datetime | date | str | None) -> str | None:
     et = ib_exec_time_to_et(value)
     return et.isoformat() if et else None
+
+
+def ib_exec_time_to_utc(value: datetime | date | str | None) -> datetime | None:
+    """IB execution.time is UTC. Return an aware UTC datetime, or None if unset."""
+    et = ib_exec_time_to_et(value)
+    return None if et is None else et.astimezone(UTC)
+
+
+def format_time_utc(value: datetime | date | str | None) -> str | None:
+    """ISO-8601 UTC with an explicit offset (+00:00). Never a bare naive string."""
+    utc = ib_exec_time_to_utc(value)
+    return utc.isoformat(timespec="seconds") if utc else None

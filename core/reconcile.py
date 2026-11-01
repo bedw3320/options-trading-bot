@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.brokers import ExecutionBroker
+from core.closeout import persistable_fill
 from utils.lineage import Lineage
 
 
@@ -23,7 +24,7 @@ def expected_option_positions(open_positions: list[dict[str, Any]]) -> dict[str,
 
 def reconcile(
     broker: ExecutionBroker, lineage: Lineage, *, strategy: str, mode: str, underlying: str,
-    cycle_id: str | None = None,
+    cycle_id: str | None = None, account_id: str | None = None,
 ) -> dict[str, Any]:
     drift: list[str] = []
     expected = expected_option_positions(lineage.open_positions(strategy, mode))
@@ -51,8 +52,14 @@ def reconcile(
         if ex.get("symbol") not in (None, underlying):
             continue
         if exec_id and oid in known and exec_id not in seen:
-            if lineage.record_fill(exec_id=exec_id, idempotency_key=None, broker_order_id=oid,
-                                   cycle_id=cycle_id, mode=mode, payload=ex):
+            rec = persistable_fill(ex)
+            if rec is None:
+                continue
+            if lineage.record_fill(exec_id=rec["exec_id"], idempotency_key=None, broker_order_id=oid,
+                                   cycle_id=cycle_id, mode=mode, payload=rec):
                 caught_up += 1
-    return {"ok": not drift, "drift": drift, "expected": expected, "broker": actual,
-            "caught_up_fills": caught_up}
+    out = {"ok": not drift, "mismatch": any(d.startswith("position ") for d in drift),
+           "drift": drift, "expected": expected, "broker": actual, "caught_up_fills": caught_up}
+    if account_id:
+        out["account_id"] = account_id
+    return out

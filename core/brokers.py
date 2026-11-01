@@ -8,6 +8,7 @@ Both expose the same small contract so the cycle code path is identical.
 from __future__ import annotations
 
 import itertools
+import os
 import time
 from collections.abc import Callable
 from typing import Any, Protocol
@@ -30,6 +31,11 @@ class IBExecution:
     def __init__(self, ib: Any, *, allow_trading: bool, expected_account_id: str | None = None,
                  sleep: Callable[[float], None] | None = None) -> None:
         self.ib = ib
+        self._account_id = (
+            expected_account_id
+            if expected_account_id is not None
+            else os.environ.get("IB_ACCOUNT_ID", "")
+        ).strip() or None
         self.guard = GuardedBroker(ib, allow_trading=allow_trading, expected_account_id=expected_account_id,
                                    trading_mode="paper")
         self._sleep = sleep or ib.sleep
@@ -69,8 +75,12 @@ class IBExecution:
     def option_positions(self, underlying: str) -> dict[str, float]:
         from integrations.ibkr.occ import format_occ_symbol
 
+        want = (self._account_id or "").upper()
         out: dict[str, float] = {}
         for pos in self.ib.positions():
+            acct = getattr(pos, "account", None)
+            if want and acct and str(acct).strip().upper() != want:
+                continue
             c = pos.contract
             if (c.secType or "").upper() != "OPT" or c.symbol != underlying:
                 continue

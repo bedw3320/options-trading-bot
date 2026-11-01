@@ -24,14 +24,14 @@ CREATE TABLE IF NOT EXISTS cycles (
     mode             TEXT NOT NULL,            -- dry_run | paper
     started_at       TEXT NOT NULL,            -- UTC ISO
     ended_at         TEXT,
-    outcome          TEXT,                     -- entered | exited | abstained | proposed_not_sent | error
+    outcome          TEXT,                     -- entered | exited | held | abstained | proposed_not_sent | error
     reasons_json     TEXT,
     git_sha          TEXT
 );
 CREATE TABLE IF NOT EXISTS cycle_artifacts (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     cycle_id     TEXT NOT NULL,
-    kind         TEXT NOT NULL,                -- inputs | market_snapshot | signals | decision | intent | order | fill | reconcile | error | kill_switch
+    kind         TEXT NOT NULL,                -- inputs | market_snapshot | signals | decision | intent | order | fill | reconcile | mark_to_market | debrief | error | kill_switch
     ts           TEXT NOT NULL,
     payload_json TEXT NOT NULL
 );
@@ -83,6 +83,20 @@ CREATE TABLE IF NOT EXISTS kill_switch (
     ts         TEXT NOT NULL,
     PRIMARY KEY (strategy, mode)
 );
+CREATE TABLE IF NOT EXISTS trade_debriefs (
+    closed_cycle_id          TEXT PRIMARY KEY,
+    opened_cycle_id          TEXT NOT NULL,
+    position_id              TEXT NOT NULL,
+    entry_reason             TEXT NOT NULL,
+    exit_reason              TEXT NOT NULL,
+    exit_trigger             TEXT,
+    realized_pnl_usd         REAL NOT NULL,
+    holding_period_seconds   INTEGER NOT NULL,
+    opened_at                TEXT NOT NULL,
+    closed_at                TEXT NOT NULL,
+    payload_json             TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_debriefs_opened ON trade_debriefs(opened_cycle_id);
 """
 
 
@@ -236,10 +250,21 @@ class Lineage:
             ).fetchall()
         out = []
         for r in rows:
-            d = dict(r)
-            d["legs"] = json.loads(d.pop("legs_json"))
-            out.append(d)
+            out.append(self._position_row(r))
         return out
+
+    def get_position(self, position_id: str) -> dict[str, Any] | None:
+        with self._conn() as c:
+            row = c.execute(
+                "SELECT * FROM strategy_positions WHERE position_id=?", (position_id,)
+            ).fetchone()
+        return None if row is None else self._position_row(row)
+
+    @staticmethod
+    def _position_row(row: sqlite3.Row) -> dict[str, Any]:
+        d = dict(row)
+        d["legs"] = json.loads(d.pop("legs_json"))
+        return d
 
     def open_position(
         self,
@@ -354,6 +379,62 @@ class Lineage:
         with self._conn() as c:
             rows = c.execute("SELECT exec_id FROM fills WHERE mode=?", (mode,)).fetchall()
         return {r["exec_id"] for r in rows}
+
+    def fills_for_cycle(self, cycle_id: str) -> list[dict[str, Any]]:
+        with self._conn() as c:
+            rows = c.execute(
+                "SELECT * FROM fills WHERE cycle_id=? ORDER BY recorded_at, exec_id", (cycle_id,)
+            ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["payload"] = json.loads(d.pop("payload_json"))
+            out.append(d)
+        return out
+
+    def decision_reasons(self, cycle_id: str) -> list[str]:
+        cyc = self.get_cycle(cycle_id)
+        if cyc is None:
+            return []
+        for art in cyc["artifacts"]:
+            if art["kind"] == "decision":
+                return list(art["payload"].get("reasons") or [])
+        return []
+
+    def record_debrief(self, payload: dict[str, Any]) -> None:
+        with self._conn() as c:
+            c.execute(
+                "INSERT INTO trade_debriefs(closed_cycle_id, opened_cycle_id, position_id, entry_reason,"
+                " exit_reason, exit_trigger, realized_pnl_usd, holding_period_seconds, opened_at,"
+                " closed_at, payload_json) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    payload["cycle_id"], payload["opened_cycle_id"], payload["position_id"],
+                    payload.get("entry_reason") or "", payload.get("exit_reason") or "",
+                    payload.get("exit_trigger"), payload["realized_pnl_usd"],
+                    payload["holding_period_seconds"], payload["opened_at"], payload["closed_at"],
+                    _dumps(payload),
+                ),
+            )
+
+    def get_debrief(self, cycle_id: str) -> dict[str, Any] | None:
+        with self._conn() as c:
+            if cycle_id == "last":
+                row = c.execute(
+                    "SELECT * FROM trade_debriefs ORDER BY closed_at DESC, closed_cycle_id DESC LIMIT 1"
+                ).fetchone()
+            else:
+                row = c.execute(
+                    "SELECT * FROM trade_debriefs WHERE closed_cycle_id=?", (cycle_id,)
+                ).fetchone()
+                if row is None:
+                    row = c.execute(
+                        "SELECT * FROM trade_debriefs WHERE opened_cycle_id=?", (cycle_id,)
+                    ).fetchone()
+        if row is None:
+            return None
+        d = dict(row)
+        d["payload"] = json.loads(d.pop("payload_json"))
+        return d
 
     # --- kill switch -------------------------------------------------------------
     def kill_state(self, strategy: str, mode: str) -> dict[str, Any] | None:

@@ -351,6 +351,8 @@ class TestFillTimeEt:
         )
         rec = fill_to_record(fill)
         assert rec["time_et"].startswith("2026-10-06T09:35:19")
+        assert rec["time_utc"] == "2026-10-06T13:35:19+00:00"
+        assert rec["qty"] == 1.0
         assert rec["exec_id"] == "00025b49.6ac58ef0.01.01"
 
 

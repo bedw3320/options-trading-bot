@@ -102,6 +102,7 @@ class TestRecordFills:
         assert row[0] == "fill"
         payload = json.loads(row[1])
         assert payload["time_et"].startswith("2026-10-06T09:35:19")
+        assert payload["time_utc"].startswith("2026-10-06T13:35:19")
         assert payload["exec_id"] == "e1"
 
 

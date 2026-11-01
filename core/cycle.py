@@ -1,7 +1,7 @@
-"""Deterministic run-once cycle (Epics 1-3, v0).
+"""Deterministic run-once cycle (Epics 1-4, v0).
 
-reconcile -> market snapshot -> signals -> decision -> intent -> guarded order ->
-fill -> reconcile -> stop. Every artifact is written under one cycle_id.
+reconcile -> mark-to-market -> signals -> decision -> intent -> guarded order ->
+fill -> debrief -> reconcile -> stop. Every artifact is written under one cycle_id.
 Abstention is a successful outcome. Data problems abstain; they never guess.
 """
 
@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from core.brokers import ExecutionBroker
+from core.closeout import build_debrief, mark_to_market, persistable_fill
 from core.guarded_broker import GuardedReject
 from core.identity import IdentityError
 from core.market_state import MarketStateProvider
@@ -115,6 +116,7 @@ def run_cycle(
     def abstain(reasons: list[str]) -> CycleResult:
         return finish("abstained", reasons, Decision(action="abstain", reasons=reasons))
 
+    account_id: str | None = None
     try:
         # 1. Kill switch (latched until `rearm`): blocks new entries only. Risk-reducing
         #    exits of existing strategy positions (exit rules or `flatten`) still run,
@@ -129,6 +131,7 @@ def run_cycle(
                 account = identity_check()
                 if not account.upper().startswith(rules.execution.required_account_prefix):
                     raise IdentityError(f"account {account} is not {rules.execution.required_account_prefix}*")
+                account_id = account
                 lineage.record(cid, "inputs", {"identity": {"account": account, "trading_mode": "paper"}})
             except IdentityError as exc:
                 lineage.latch_kill(name, mode, f"identity: {exc}")
@@ -138,7 +141,8 @@ def run_cycle(
                 return abstain(["market_closed (outside 09:30-16:00 ET weekdays)"])
 
         # 3. Reconcile before deciding (IBKR is authoritative).
-        rec = reconcile(broker, lineage, strategy=name, mode=mode, underlying=rules.underlying, cycle_id=cid)
+        rec = reconcile(broker, lineage, strategy=name, mode=mode, underlying=rules.underlying,
+                        cycle_id=cid, account_id=account_id)
         lineage.record(cid, "reconcile", {"phase": "pre", **rec})
         if not rec["ok"]:
             # Drift blocks exits too: the position we would close cannot be verified.
@@ -165,12 +169,15 @@ def run_cycle(
         # 6a. Manage the open position (max one).
         if positions:
             pos = positions[0]
+            mtm = mark_to_market(pos, snap, rules, daily_realized_pnl_usd=realized)
+            lineage.record(cid, "mark_to_market", mtm.model_dump(mode="json"))
             trigger, mark, why = evaluate_exit(pos, snap, rules)
             if flatten:
                 why = [f"manual flatten requested (rule trigger: {trigger})"] + why
                 trigger = "manual_flatten"
             lineage.record(cid, "signals", {"exit_evaluation": {"position_id": pos["position_id"],
-                                                                 "trigger": trigger, "mark": mark, "reasons": why}})
+                                                                 "trigger": trigger, "mark": mark, "reasons": why,
+                                                                 "daily_loss_breach": mtm.daily_loss_breach}})
             if trigger is None:
                 return finish("held", why + ([kill_note] if kill_note else []),
                               Decision(action="abstain", reasons=["holding position"] + why))
@@ -184,7 +191,7 @@ def run_cycle(
             decision = Decision(action="exit", reasons=why, exit_trigger=trigger)
             lineage.record(cid, "decision", decision.model_dump(mode="json"))
             res = _execute(cid, intent, mode, broker, lineage, rules, name, finish, trigger=trigger,
-                           record_only=bool(tag), shadow=tag)
+                           exit_reasons=why, record_only=bool(tag), shadow=tag, account_id=account_id)
             if kill:
                 res.reasons.append("exit ran while kill switch latched")
                 lineage.annotate_reasons(cid, res.reasons)
@@ -213,7 +220,7 @@ def run_cycle(
         decision = Decision(action="enter", reasons=["all required signals passed"] + why)
         lineage.record(cid, "decision", decision.model_dump(mode="json"))
         return _execute(cid, intent, mode, broker, lineage, rules, name, finish,
-                        record_only=bool(tag), shadow=tag)
+                        record_only=bool(tag), shadow=tag, account_id=account_id)
     except Exception as exc:  # never crash the scheduler; record and count
         log.exception("cycle %s failed", cid)
         lineage.record(cid, "error", {"type": type(exc).__name__, "message": str(exc)})
@@ -221,7 +228,9 @@ def run_cycle(
 
 
 def _execute(cid, intent: ComboIntent, mode, broker, lineage: Lineage, rules, name, finish, *,
-             trigger: str | None = None, record_only: bool = False, shadow: str | None = None) -> CycleResult:
+             trigger: str | None = None, exit_reasons: list[str] | None = None,
+             record_only: bool = False, shadow: str | None = None,
+             account_id: str | None = None) -> CycleResult:
     lineage.record(cid, "intent", intent.model_dump(mode="json"))
     if record_only:
         # Shadow / delayed data: journal the intent, never call broker.place.
@@ -269,12 +278,22 @@ def _execute(cid, intent: ComboIntent, mode, broker, lineage: Lineage, rules, na
     st = placed if placed.get("status") == "Filled" else broker.wait(oid, rules.execution.fill_wait_seconds)
     if st.get("status") != "Filled":
         st = broker.cancel(oid)
+    opened_cycle_id = None
+    if intent.purpose == "close" and intent.position_id:
+        held = lineage.get_position(intent.position_id)
+        opened_cycle_id = None if held is None else held.get("opened_cycle_id")
+    persisted: list[dict] = []
     for f in st.get("fills") or []:
-        if f.get("exec_id"):
-            lineage.record_fill(exec_id=f["exec_id"], idempotency_key=intent.idempotency_key,
-                                broker_order_id=oid, cycle_id=cid, mode=mode, payload=f)
+        rec_fill = persistable_fill(f)
+        if rec_fill is None:
+            continue
+        if opened_cycle_id:
+            rec_fill = {**rec_fill, "opened_cycle_id": opened_cycle_id}
+        lineage.record_fill(exec_id=rec_fill["exec_id"], idempotency_key=intent.idempotency_key,
+                            broker_order_id=oid, cycle_id=cid, mode=mode, payload=rec_fill)
+        persisted.append(rec_fill)
     lineage.record(cid, "fill", {"broker_order_id": oid, **{k: v for k, v in st.items() if k != "fills"},
-                                 "fills": st.get("fills") or []})
+                                 "fills": persisted})
 
     if st.get("status") == "Filled":
         lineage.update_order(intent.idempotency_key, status="filled")
@@ -287,15 +306,28 @@ def _execute(cid, intent: ComboIntent, mode, broker, lineage: Lineage, rules, na
             outcome, reasons = "entered", [f"filled {intent.action} combo @ {price:+.2f}"]
         else:
             pnl = lineage.close_position(intent.position_id, cycle_id=cid, exit_price=price, trigger=trigger or "")
+            pos = lineage.get_position(intent.position_id)
+            if pos is not None:
+                debrief = build_debrief(
+                    closed_cycle_id=cid, position=pos,
+                    entry_reason="; ".join(lineage.decision_reasons(pos["opened_cycle_id"])),
+                    exit_reason=(exit_reasons[0] if exit_reasons else (trigger or "")),
+                    exit_trigger=trigger,
+                )
+                payload = debrief.model_dump(mode="json")
+                lineage.record(cid, "debrief", payload)
+                lineage.record_debrief(payload)
             outcome, reasons = "exited", [f"{trigger}: closed @ {price:+.2f}, realized ${pnl:.0f}"]
     else:
         lineage.update_order(intent.idempotency_key, status="cancelled")
         outcome, reasons = "abstained", [f"order {oid} not filled at limit {intent.limit_price:+.2f}; cancelled"]
 
-    rec = reconcile(broker, lineage, strategy=name, mode=mode, underlying=rules.underlying, cycle_id=cid)
+    rec = reconcile(broker, lineage, strategy=name, mode=mode, underlying=rules.underlying,
+                    cycle_id=cid, account_id=account_id)
     if not rec["ok"] and hasattr(broker, "settle"):
         broker.settle()  # IB position updates can lag a fill by a moment; retry once
-        rec = reconcile(broker, lineage, strategy=name, mode=mode, underlying=rules.underlying, cycle_id=cid)
+        rec = reconcile(broker, lineage, strategy=name, mode=mode, underlying=rules.underlying,
+                        cycle_id=cid, account_id=account_id)
     lineage.record(cid, "reconcile", {"phase": "post", **rec})
     if not rec["ok"]:
         lineage.latch_kill(name, mode, "post-trade reconcile drift: " + "; ".join(rec["drift"])[:500])

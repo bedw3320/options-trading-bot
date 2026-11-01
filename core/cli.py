@@ -131,7 +131,8 @@ def _fmt_signals(payload: dict) -> list[str]:
     return lines
 
 
-def explain(cycle: dict) -> str:
+def explain(cycle: dict, record: dict | None = None) -> str:
+    from core.decision_record import format_decision_explain
     from utils.lineage import to_et
 
     out = [
@@ -140,6 +141,11 @@ def explain(cycle: dict) -> str:
         f"  OUTCOME: {cycle['outcome']}",
     ]
     out += [f"    - {r}" for r in cycle["reasons"]]
+    rec = record or cycle.get("decision_record")
+    if rec is None:
+        rec = next((a["payload"] for a in cycle.get("artifacts") or [] if a.get("kind") == "decision_record"), None)
+    if rec:
+        out.append(format_decision_explain(rec.get("payload") or rec))
     for a in cycle["artifacts"]:
         k, p = a["kind"], a["payload"]
         if k == "market_snapshot":
@@ -187,11 +193,19 @@ def explain(cycle: dict) -> str:
 def cmd_explain(args) -> int:
     from utils.lineage import Lineage
 
-    cycle = Lineage(args.db).get_cycle(args.cycle_id)
+    lin = Lineage(args.db)
+    cycle = lin.get_cycle(args.cycle_id)
     if cycle is None:
         print(f"no cycle {args.cycle_id}", file=sys.stderr)
         return 2
-    print(json.dumps(cycle, indent=2, default=str) if args.json else explain(cycle))
+    rec = lin.get_decision_record(cycle["cycle_id"])
+    if args.json:
+        blob = dict(cycle)
+        if rec:
+            blob["decision_record"] = rec.get("payload") or rec
+        print(json.dumps(blob, indent=2, default=str))
+    else:
+        print(explain(cycle, record=None if rec is None else rec.get("payload") or rec))
     return 0
 
 

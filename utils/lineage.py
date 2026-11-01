@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS cycles (
 CREATE TABLE IF NOT EXISTS cycle_artifacts (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     cycle_id     TEXT NOT NULL,
-    kind         TEXT NOT NULL,                -- inputs | market_snapshot | signals | decision | intent | order | fill | reconcile | mark_to_market | debrief | error | kill_switch
+    kind         TEXT NOT NULL,                -- inputs | market_snapshot | signals | decision | decision_record | intent | order | fill | reconcile | mark_to_market | debrief | error | kill_switch
     ts           TEXT NOT NULL,
     payload_json TEXT NOT NULL
 );
@@ -97,6 +97,21 @@ CREATE TABLE IF NOT EXISTS trade_debriefs (
     payload_json             TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_debriefs_opened ON trade_debriefs(opened_cycle_id);
+CREATE TABLE IF NOT EXISTS decision_records (
+    cycle_id              TEXT PRIMARY KEY,
+    recorded_at           TEXT NOT NULL,
+    schema_version        TEXT NOT NULL,
+    gate_catalog_version  TEXT NOT NULL,
+    run_mode              TEXT NOT NULL,
+    trading_mode          TEXT NOT NULL,
+    git_sha               TEXT,
+    strategy_sha256       TEXT NOT NULL,
+    strategy_yaml         TEXT NOT NULL,
+    outcome               TEXT NOT NULL,
+    cycle_outcome         TEXT,
+    binding_gate          TEXT,
+    payload_json          TEXT NOT NULL
+);
 """
 
 
@@ -430,6 +445,42 @@ class Lineage:
                     row = c.execute(
                         "SELECT * FROM trade_debriefs WHERE opened_cycle_id=?", (cycle_id,)
                     ).fetchone()
+        if row is None:
+            return None
+        d = dict(row)
+        d["payload"] = json.loads(d.pop("payload_json"))
+        return d
+
+    def insert_decision_record(self, payload: dict[str, Any]) -> bool:
+        """Append-only WAL row. First write for a cycle_id wins (no update)."""
+        with self._conn() as c:
+            cur = c.execute(
+                "INSERT OR IGNORE INTO decision_records(cycle_id, recorded_at, schema_version,"
+                " gate_catalog_version, run_mode, trading_mode, git_sha, strategy_sha256,"
+                " strategy_yaml, outcome, cycle_outcome, binding_gate, payload_json)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    payload["cycle_id"], payload.get("recorded_at") or utc_now_iso(),
+                    payload.get("schema_version"), payload.get("gate_catalog_version"),
+                    payload.get("run_mode"), payload.get("trading_mode"),
+                    payload.get("git_sha"), payload.get("strategy_sha256"),
+                    payload.get("strategy_yaml") or "",
+                    payload.get("outcome"), payload.get("cycle_outcome"),
+                    payload.get("binding_gate"), _dumps(payload),
+                ),
+            )
+            return cur.rowcount > 0
+
+    def get_decision_record(self, cycle_id: str) -> dict[str, Any] | None:
+        with self._conn() as c:
+            if cycle_id == "last":
+                row = c.execute(
+                    "SELECT * FROM decision_records ORDER BY recorded_at DESC, cycle_id DESC LIMIT 1"
+                ).fetchone()
+            else:
+                row = c.execute(
+                    "SELECT * FROM decision_records WHERE cycle_id=?", (cycle_id,)
+                ).fetchone()
         if row is None:
             return None
         d = dict(row)

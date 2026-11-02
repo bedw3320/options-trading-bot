@@ -16,6 +16,8 @@
 #                          both    = either side, only when that side is rich
 #                                    and the written thesis agrees
 #   thesis:              str — written by a human; required; no thesis, no trade
+#   falsifier:           str — optional; what would prove the thesis wrong
+#                          (LOOP principle 6). Omit rather than invent.
 #   financing_dependence: str — debt, capex, refinancing dates; human-written,
 #                          not computed. Use TBD when unknown. Do not invent.
 #   events_to_avoid:     list[str] — earnings, lockups, secondaries/converts;
@@ -24,6 +26,7 @@
 #   added_by:            str
 #   added_on:            YYYY-MM-DD
 #
+# Validated by schemas/watchlist.py (tests only; not a runner input).
 # Data only. This file does not place trades.
 
 names:
@@ -33,6 +36,9 @@ names:
       When SPY put skew is rich, sell a defined-risk put (short put + long put
       wing) and use the credit toward an OTM call. Existing paper strategy:
       strategies/active/spy-defined-risk-rr.yaml.
+    # TODO(falsifier): not obviously implied by this row's thesis text
+    # (mechanical put-skew RR, not a directional issuer view). Fill when a
+    # human writes one; do not invent.
     financing_dependence: >
       Not applicable — SPY is an index ETF, not an issuer. No debt, capex, or
       refinancing calendar.
@@ -42,17 +48,22 @@ names:
     added_by: Will
     added_on: "2026-10-26"
 
+  # Financing context as of 2026-11-02: ~1,145bp 5y CDS, ~15% unsecured
+  # yields, ~$50B debt, 2026 converts $3.5B (Apr) and $3.7B (Sep).
+  # After a 39% drop (89.62 Oct 2 -> 54.87 Oct 30) the early-October
+  # 'calls rich' leg is unverified pending per-strike IV from IBKR.
   - ticker: CRWV
     allowed_direction: bearish
     thesis: >
       Partner example, early October 2026: calls were rich, rates were rising
       fast, and CRWV depends on financing. Structure used: long put, short call,
       long call wing above the short call (defined-risk bearish risk reversal).
+    falsifier: "5y CDS back under ~600bp, or a clean refinancing announced at Q3 earnings (Nov 10, 2026)."
     financing_dependence: >
       Depends on financing (partner thesis). Debt amounts, capex, and
       refinancing dates: TBD.
     events_to_avoid:
-      - "earnings: TBD"
+      - "earnings: Q3 2026 results Tue 2026-11-10 after close (5 PM ET); source https://investors.coreweave.com/news/news-details/2026/CoreWeave-Announces-Date-of-Third-Quarter-2026-Financial-Results-and-Conference-Call/default.aspx"
       - "lockups: TBD"
       - "secondaries/converts: TBD"
     status: record_only

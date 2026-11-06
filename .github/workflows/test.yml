@@ -22,5 +22,10 @@ jobs:
       - name: Sync deps
         run: uv sync --frozen
 
+      - name: Validate watchlist
+        run: uv run python scripts/validate_watchlist.py
+
       - name: Run tests
+        env:
+          MARKET_DATA_SOURCE: cboe
         run: uv run python -m pytest -q

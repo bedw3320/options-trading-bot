@@ -1,64 +1,96 @@
 # Shared watchlist for the two-way defined-risk skew strategy.
 #
-# Not a StrategyConfig. The runner and core/cycle.py do not load this file.
-# Will, the partner (experienced options trader), and the operator maintain
-# it together. A name may trade only when a written human thesis agrees with
-# the rich side of that name's skew, and only as defined risk.
+# Not a StrategyConfig. The runner and core/cycle.py do not load this file
+# (Epic 5 — do not start wiring it). Will, the partner, and the operator
+# maintain it together. A name may trade only when a written human thesis
+# agrees with the rich side of that name's skew, and only as defined risk.
+#
+# v0 shrunk plan (Will): one theme, three record_only candidates. SPY is the
+# paper baseline (active), not a candidate. CI enforces the cap.
 #
 # New names start as record_only: log the signal and what the structure would
-# have paid; no orders. A human promotes to active after a sample exists.
+# have paid; no orders. Only Will promotes to active (`approved_by: will` +
+# `approved_on`). Operators and agents must not set that marker.
 #
-# Schema (one object per name under `names:`):
+# Schema (one object per name under `names:`), validated by schemas/watchlist.py:
 #   ticker:              str
-#   allowed_direction:   bullish | bearish | both
+#   direction:           bullish | bearish
 #                          bullish = sell puts (defined-risk)
 #                          bearish = sell calls (defined-risk)
-#                          both    = either side, only when that side is rich
-#                                    and the written thesis agrees
+#                          (`allowed_direction` still accepted as an alias)
+#   status:              record_only | active | demoted
+#   theme:               str — v0: one theme across record_only names
 #   thesis:              str — written by a human; required; no thesis, no trade
-#   falsifier:           str — optional; what would prove the thesis wrong
-#                          (LOOP principle 6). Omit rather than invent.
-#   financing_dependence: str — debt, capex, refinancing dates; human-written,
-#                          not computed. Use TBD when unknown. Do not invent.
-#   events_to_avoid:     list[str] — earnings, lockups, secondaries/converts;
-#                          FOMC for index names
-#   status:              active | record_only
-#   added_by:            str
-#   added_on:            YYYY-MM-DD
+#   sources:             list of URLs/refs; required (>=1) for non-SPY
+#   falsifier:           {metric, threshold, source, expires} — required fields
+#                          when present. tripped/expired => no new entries
+#                          (helper in schemas/watchlist.py; not wired to runner)
+#   events_to_avoid:     list[str]
+#   cluster:             str
+#   exits:               {profit_take, stop, dte_close (~21), close_before_blackout}
+#                          NUMBERS ARE PROPOSALS FOR WILL unless noted
+#   narrative:           free-form; ignored by the runner
+#   forecast_horizon / probability / registered_at:
+#                          pre-registration for record_only (thesis before outcomes)
+#   approved_by / approved_on: only Will; required for status=active
+#   evidence_as_of:      date of the sources; stale evidence blocks promotion
+#   financing_dependence, added_by, added_on: kept from PR #13/#16
 #
-# Validated by schemas/watchlist.py (tests only; not a runner input).
 # Data only. This file does not place trades.
 
 names:
   - ticker: SPY
-    allowed_direction: bullish
+    direction: bullish
+    status: active
+    theme: index-baseline
+    cluster: index
     thesis: >
       When SPY put skew is rich, sell a defined-risk put (short put + long put
       wing) and use the credit toward an OTM call. Existing paper strategy:
       strategies/active/spy-defined-risk-rr.yaml.
-    # TODO(falsifier): not obviously implied by this row's thesis text
-    # (mechanical put-skew RR, not a directional issuer view). Fill when a
-    # human writes one; do not invent.
+    # Index baseline: sources not required (CI). Mechanical put-skew RR, not
+    # a directional issuer view. TODO(falsifier): fill when a human writes one;
+    # do not invent.
+    sources: []
     financing_dependence: >
       Not applicable — SPY is an index ETF, not an issuer. No debt, capex, or
       refinancing calendar.
     events_to_avoid:
       - "FOMC decision days (see strategies/active/spy-defined-risk-rr.yaml rules.events)"
-    status: active
+    # PROPOSAL for Will: copied from strategies/active/spy-defined-risk-rr.yaml.
+    exits:
+      profit_take: 1000
+      stop: 1250
+      dte_close: 21
+      close_before_blackout: true
     added_by: Will
     added_on: "2026-10-26"
+    # Only Will sets these. Existing paper strategy is the approval.
+    approved_by: will
+    approved_on: "2026-10-26"
 
   # Financing context as of 2026-11-02: ~1,145bp 5y CDS, ~15% unsecured
   # yields, ~$50B debt, 2026 converts $3.5B (Apr) and $3.7B (Sep).
   # After a 39% drop (89.62 Oct 2 -> 54.87 Oct 30) the early-October
   # 'calls rich' leg is unverified pending per-strike IV from IBKR.
   - ticker: CRWV
-    allowed_direction: bearish
+    direction: bearish
+    status: record_only
+    theme: ai-neocloud-financing
+    cluster: neocloud
     thesis: >
       Partner example, early October 2026: calls were rich, rates were rising
       fast, and CRWV depends on financing. Structure used: long put, short call,
       long call wing above the short call (defined-risk bearish risk reversal).
-    falsifier: "5y CDS back under ~600bp, or a clean refinancing announced at Q3 earnings (Nov 10, 2026)."
+    sources:
+      - "https://investors.coreweave.com/news/news-details/2026/CoreWeave-Announces-Date-of-Third-Quarter-2026-Financial-Results-and-Conference-Call/default.aspx"
+      - "partner thesis early October 2026; financing comment 2026-11-02 in this file (~1145bp 5y CDS)"
+    falsifier:
+      metric: 5y_cds_bp
+      threshold: 600
+      source: "partner thesis 2026-10; YAML comment 2026-11-02 (~1145bp 5y CDS)"
+      expires: "2026-11-17"
+      note: "Also invalidated by a clean refinancing announced at Q3 earnings (2026-11-10)."
     financing_dependence: >
       Depends on financing (partner thesis). Debt amounts, capex, and
       refinancing dates: TBD.
@@ -66,6 +98,20 @@ names:
       - "earnings: Q3 2026 results Tue 2026-11-10 after close (5 PM ET); source https://investors.coreweave.com/news/news-details/2026/CoreWeave-Announces-Date-of-Third-Quarter-2026-Financial-Results-and-Conference-Call/default.aspx"
       - "lockups: TBD"
       - "secondaries/converts: TBD"
-    status: record_only
+    # PROPOSAL for Will: same dollar exits as the SPY YAML until a name-specific
+    # cap is set. Do not treat as approved sizing.
+    exits:
+      profit_take: 1000
+      stop: 1250
+      dte_close: 21
+      close_before_blackout: true
+    narrative: >
+      Original string falsifier (PR #16): 5y CDS back under ~600bp, or a clean
+      refinancing announced at Q3 earnings (Nov 10, 2026). Calls-rich leg still
+      unverified pending per-strike IV from IBKR.
+    forecast_horizon: "12 weeks"
+    # probability omitted: do not invent a number.
+    registered_at: "2026-10-26"
+    evidence_as_of: "2026-11-02"
     added_by: partner
     added_on: "2026-10-26"

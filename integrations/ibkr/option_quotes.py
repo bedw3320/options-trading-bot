@@ -11,6 +11,7 @@ import os
 import time
 from collections.abc import Callable, Iterable
 from contextlib import contextmanager
+from datetime import datetime
 from typing import Any, Iterator
 
 from ib_insync import IB, Contract
@@ -29,6 +30,16 @@ WATCHED_ERROR_CODES = frozenset({10197, 354, 10090, 162, 10167})
 DEFAULT_MARKET_DATA_TYPE = 1
 DEFAULT_QUOTE_TIMEOUT = 10.0
 DEFAULT_POLL_INTERVAL = 0.25
+
+# IB reqMarketDataType: 1 live, 2 frozen, 3 delayed, 4 delayed-frozen.
+MARKET_DATA_TYPE_LABELS = {
+    1: "ib_live",
+    2: "ib_frozen",
+    3: "ib_delayed",
+    4: "ib_delayed_frozen",
+}
+DELAYED_MARKET_DATA_TYPES = frozenset({3, 4})
+NON_LIVE_MARKET_DATA_TYPES = frozenset({2, 3, 4})
 
 STATUS_OK = "ok"
 STATUS_TIMEOUT = "timeout"
@@ -70,6 +81,8 @@ class MarketQuote(BaseModel):
     ask_greeks: OptionGreeks | None = None
     open_interest: float | None = None
     implied_vol: float | None = None
+    volume: float | None = None
+    quote_time: datetime | None = None
     errors: list[IbError] = Field(default_factory=list)
     status: str = STATUS_OK
 
@@ -137,6 +150,21 @@ def ticker_has_bid_ask(ticker: Any) -> bool:
     return is_finite_price(getattr(ticker, "bid", None)) and is_finite_price(
         getattr(ticker, "ask", None)
     )
+
+
+def market_data_source_label(mdt: int | None) -> str:
+    if mdt is None:
+        return "ib_unknown"
+    return MARKET_DATA_TYPE_LABELS.get(int(mdt), f"ib_mdt_{int(mdt)}")
+
+
+def is_delayed_market_data(mdt: int | None) -> bool:
+    return mdt in DELAYED_MARKET_DATA_TYPES
+
+
+def is_non_live_market_data(mdt: int | None) -> bool:
+    """Delayed, delayed-frozen, or frozen — not a live streaming quote."""
+    return mdt in NON_LIVE_MARKET_DATA_TYPES
 
 
 def configured_market_data_type(override: int | None = None) -> int:
@@ -337,6 +365,11 @@ def extract_quote(
         mdt = requested_mdt
     else:
         mdt = int(mdt)
+    volume = finite_or_none(getattr(ticker, "volume", None))
+    if volume is not None and volume < 0:
+        volume = None
+    raw_time = getattr(ticker, "time", None)
+    quote_time = raw_time if isinstance(raw_time, datetime) else None
     return MarketQuote(
         symbol=_quote_symbol(contract),
         sec_type=(getattr(contract, "secType", "") or "STK").upper() or "STK",
@@ -353,6 +386,8 @@ def extract_quote(
         ask_greeks=ask_g,
         open_interest=_option_open_interest(ticker, right),
         implied_vol=iv,
+        volume=volume,
+        quote_time=quote_time,
         errors=errors,
         status=status,
     )

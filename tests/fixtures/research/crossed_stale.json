@@ -1,0 +1,14 @@
+{
+  "ticker": "SPY",
+  "as_of": "2026-11-06T20:45:00+00:00",
+  "underlying_price": 670.0,
+  "data_source": "ib_live",
+  "market_data_type": 1,
+  "diagnostic_only": false,
+  "legs": [
+    {"occ": "SPY261218P00650000", "expiry": "20261218", "right": "P", "strike": 650.0, "bid": 8.4, "ask": 8.0, "delta": -0.25, "iv": 0.18, "open_interest": 8000, "volume": 1200, "quote_time": "2026-11-06T20:44:50+00:00", "market_data_type": 1, "data_source": "ib_live", "status": "ok"},
+    {"occ": "SPY261218P00630000", "expiry": "20261218", "right": "P", "strike": 630.0, "bid": 4.0, "ask": 4.1, "delta": -0.12, "iv": 0.22, "open_interest": 4000, "volume": 400, "quote_time": "2026-11-06T20:44:50+00:00", "market_data_type": 1, "data_source": "ib_live", "status": "ok"},
+    {"occ": "SPY261218C00690000", "expiry": "20261218", "right": "C", "strike": 690.0, "bid": 7.5, "ask": 7.7, "delta": 0.25, "iv": 0.13, "open_interest": 9000, "volume": 1500, "quote_time": "2026-11-06T18:00:00+00:00", "market_data_type": 1, "data_source": "ib_live", "status": "ok"},
+    {"occ": "SPY261218C00710000", "expiry": "20261218", "right": "C", "strike": 710.0, "bid": 3.4, "ask": 3.5, "delta": 0.12, "iv": 0.12, "open_interest": 3500, "volume": 300, "quote_time": "2026-11-06T20:44:50+00:00", "market_data_type": 1, "data_source": "ib_live", "status": "ok"}
+  ]
+}

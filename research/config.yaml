@@ -1,0 +1,20 @@
+# Research-screen config. ALL THRESHOLDS ARE PROPOSALS FOR WILL.
+#
+# Liquidity numbers are omitted on purpose: they default to
+# strategies/active/spy-defined-risk-rr.yaml rules.structure
+# (min_open_interest: 500, max_spread_pct_of_mid: 10, dte 30-45, wing_width 20).
+# Do not edit the strategy YAML from this pipeline.
+#
+# wing_width: 20 is a SPY dollar width. Applying it to single names is a
+# proposal, not an approved per-name structure.
+
+strategy: strategies/active/spy-defined-risk-rr.yaml
+# min_open_interest: 500
+# max_spread_pct_of_mid: 10
+# dte_min: 30
+# dte_max: 45
+# dte_target: 38
+# target_abs_delta: 0.25
+# wing_width: 20
+max_quote_age_seconds: 60
+delayed_is_diagnostic_only: true

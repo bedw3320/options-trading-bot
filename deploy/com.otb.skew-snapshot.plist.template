@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  NOT installed by ops/mini/install.sh. Optional Mini job: once per weekday near
+  the cash close, snapshot per-watchlist-ticker skew into state/research.db.
+
+  Render: sed -e "s#__DIR__#$PWD/deploy#g" -e "s#__HOME__#$HOME#g" -e "s#__REPO__#$PWD#g" \
+    deploy/com.otb.skew-snapshot.plist.template > ~/Library/LaunchAgents/com.otb.skew-snapshot.plist
+
+  See research/README.md for the install note. Do not assume this is loaded.
+-->
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.otb.skew-snapshot</string>
+  <key>ProgramArguments</key><array>
+    <string>/bin/bash</string>
+    <string>__DIR__/skew-snapshot.sh</string>
+  </array>
+  <key>WorkingDirectory</key><string>__REPO__</string>
+  <key>StartCalendarInterval</key><array>
+    <dict>
+      <key>Weekday</key><integer>1</integer>
+      <key>Hour</key><integer>15</integer>
+      <key>Minute</key><integer>50</integer>
+    </dict>
+    <dict>
+      <key>Weekday</key><integer>2</integer>
+      <key>Hour</key><integer>15</integer>
+      <key>Minute</key><integer>50</integer>
+    </dict>
+    <dict>
+      <key>Weekday</key><integer>3</integer>
+      <key>Hour</key><integer>15</integer>
+      <key>Minute</key><integer>50</integer>
+    </dict>
+    <dict>
+      <key>Weekday</key><integer>4</integer>
+      <key>Hour</key><integer>15</integer>
+      <key>Minute</key><integer>50</integer>
+    </dict>
+    <dict>
+      <key>Weekday</key><integer>5</integer>
+      <key>Hour</key><integer>15</integer>
+      <key>Minute</key><integer>50</integer>
+    </dict>
+  </array>
+  <key>StandardOutPath</key><string>__HOME__/Library/Logs/otb-skew-snapshot.log</string>
+  <key>StandardErrorPath</key><string>__HOME__/Library/Logs/otb-skew-snapshot.log</string>
+</dict></plist>

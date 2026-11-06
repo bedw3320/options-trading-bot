@@ -32,6 +32,30 @@ DEFAULT_FIXTURE = "tests/fixtures/spy_snapshot_entry.json"
 DEFAULT_DB = "state/state.db"
 
 
+def resolve_data_source(explicit: str | None, *, dry_run: bool) -> str:
+    """Dry-run uses fixtures; it must not inherit a developer's MARKET_DATA_SOURCE.
+
+    Paper/live snapshots still read env MARKET_DATA_SOURCE when --data-source is
+    omitted. `--data-source cboe` on a dry-run is an explicit shadow test.
+    """
+    if explicit and str(explicit).strip():
+        return str(explicit).strip().lower()
+    if dry_run:
+        return "ib"
+    return (os.environ.get("MARKET_DATA_SOURCE") or "ib").strip().lower() or "ib"
+
+
+def _maybe_load_dotenv() -> None:
+    """Load .env for Mini/paper runs. Tests must not inherit a developer .env."""
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return
+    if os.environ.get("OTB_SKIP_DOTENV", "").strip().lower() in {"1", "true", "yes"}:
+        return
+    from dotenv import load_dotenv
+
+    load_dotenv()
+
+
 @contextmanager
 def cycle_lock(db_path: str) -> Iterator[bool]:
     lock_path = Path(db_path).parent / "cycle.lock"
@@ -85,7 +109,7 @@ def cmd_run(args) -> int:
         if not got:
             print("SKIP another cycle is running (state/cycle.lock)")
             return 3
-        src = (getattr(args, "data_source", None) or "ib").strip().lower()
+        src = resolve_data_source(getattr(args, "data_source", None), dry_run=bool(args.dry_run))
         if args.dry_run:
             seeded = expected_option_positions(lineage.open_positions(strategy.name, "dry_run"))
             result = run_cycle(args.strategy, mode="dry_run", provider=FixtureMarketState(args.fixture),
@@ -294,9 +318,7 @@ def _fmt_debrief(rec: dict) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    from dotenv import load_dotenv
-
-    load_dotenv()
+    _maybe_load_dotenv()
     p = argparse.ArgumentParser(prog="core.cli", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--db", default=os.environ.get("STATE_DB", DEFAULT_DB))
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -306,9 +328,9 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--dry-run", action="store_true", help="fixtures + SimBroker, no IB connection")
     r.add_argument("--fixture", default=DEFAULT_FIXTURE)
     r.add_argument("--allow-trading", action="store_true", help="paper only: send via GuardedBroker")
-    r.add_argument("--data-source", default=os.environ.get("MARKET_DATA_SOURCE", "ib"),
-                   help="quotes/Greeks provider: ib | alpaca | cboe (env MARKET_DATA_SOURCE); "
-                        "cboe is delayed shadow data and cannot place orders")
+    r.add_argument("--data-source", default=None,
+                   help="quotes/Greeks provider: ib | alpaca | cboe. Default: ib on --dry-run; "
+                        "else env MARKET_DATA_SOURCE or ib. cboe is delayed shadow data and cannot place orders")
     r.set_defaults(fn=cmd_run)
 
     f = sub.add_parser("flatten", help="close the open strategy position now (allowed while kill switch is latched)")
@@ -316,8 +338,9 @@ def main(argv: list[str] | None = None) -> int:
     f.add_argument("--dry-run", action="store_true")
     f.add_argument("--fixture", default=DEFAULT_FIXTURE)
     f.add_argument("--allow-trading", action="store_true", help="paper only: send via GuardedBroker")
-    f.add_argument("--data-source", default=os.environ.get("MARKET_DATA_SOURCE", "ib"),
-                   help="quotes/Greeks provider: ib | alpaca | cboe (cboe cannot place)")
+    f.add_argument("--data-source", default=None,
+                   help="quotes/Greeks provider: ib | alpaca | cboe. Default: ib on --dry-run; "
+                        "else env MARKET_DATA_SOURCE or ib (cboe cannot place)")
     f.set_defaults(fn=cmd_flatten)
 
     e = sub.add_parser("explain")

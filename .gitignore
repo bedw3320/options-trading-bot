@@ -33,5 +33,10 @@ htmlcov/
 state/
 !state/.gitkeep
 
+# research artifacts generated on the Mini
+research/screens/*.json
+research/screens/*.md
+research/*.db
+
 # IB Gateway persisted settings (docker bind mount)
 tws_settings/

@@ -4,7 +4,7 @@ Multi-asset swing trading platform (stocks, options, crypto) powered by Pydantic
 
 **Read `LOOP.md` first.** That file is first principles and harness law (planes, four constraints, current vs target). This file is the working map.
 
-Product-in-force (locked 2026-11-11): [`STATUS.md`](STATUS.md) and [`knowledge/ops/exit-strategy.md`](knowledge/ops/exit-strategy.md). Standard RR, no protective put, no defined max loss, manual flatten only. The active YAML's defined-risk yellow-zone exits are superseded intent.
+Product-in-force (locked 2026-11-11): [`STATUS.md`](STATUS.md) and [`knowledge/ops/exit-strategy.md`](knowledge/ops/exit-strategy.md). Standard RR, no protective put, no defined max loss, manual flatten only. Loaded strategy: `strategies/active/us-large-cap-rr.yaml`. `spy-defined-risk-rr.yaml` is superseded/historical.
 
 Standalone runtime. No sibling personal repos. No shared secrets.
 

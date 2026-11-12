@@ -1,0 +1,114 @@
+# In-force core (locked 2026-11-11, America/Toronto).
+# Standard risk reversal: short 25-delta put + long 25-delta call, same expiry,
+# 30-45 DTE, 1 lot. No protective put, no defined max loss, no automated exits.
+# The runner loads THIS file. strategies/active/spy-defined-risk-rr.yaml is
+# superseded/historical and is not executed.
+# Do not load strategies/watchlist.yaml here (theme watchlist is a later PR).
+name: us-large-cap-rr
+version: "1.0.0"
+description: >
+  When 25-delta risk reversal (call IV minus put IV) is -5 vol points or richer
+  on a liquid US large-cap, sell the listed 25-delta put and buy the listed
+  25-delta call, same expiry, 30-45 DTE, one lot. Rank by richest rr25; open up
+  to 5 names per run and 10 per day. Paper only. Closes are manual flatten or
+  hold to expiry. Testing-period risk cap is paper DUT116016 equity and margin.
+
+asset_universe:
+  asset_classes: [option]
+  tickers: []
+  filters: ["S&P 500 components", "existing options liquidity screen (25d put + 25d call)"]
+
+schedule:
+  frequency: "twice on weekdays, 10:00 and 15:00 America/Toronto"
+  active_sessions: [market_hours]
+  timezone: "America/Toronto"
+
+data_requirements:
+  - source: ohlcv
+    params: {timeframe: "1D", bars: 25}
+  - source: options_flow
+    params: {greeks: model, expiries: 1, strike_step: 5}
+
+entry:
+  conditions:
+    - description: "25-delta risk reversal (call IV minus put IV) is -5 vol points or lower"
+      priority: 10
+    - description: "25-delta put and 25-delta call are liquid (spread and open interest)"
+      priority: 9
+    - description: "No open risk reversal already on this name"
+      priority: 9
+  min_conditions_met: 3
+  position_type: long
+
+exit:
+  conditions:
+    - description: "Manual flatten only (core.cli flatten). No 21-DTE / underlying / dollar / take-profit stops."
+      priority: 10
+  min_conditions_met: 1
+
+risk:
+  max_position_pct: 1.0
+  max_total_exposure_pct: 50.0
+  max_daily_trades: 10
+  confidence_threshold: 0.75
+
+rules:
+  engine: standard_risk_reversal_v1
+  universe:
+    source: sp500
+  signals:
+    target_abs_delta: 0.25
+    max_rr25: -0.05
+    require_iv_over_rv: false
+    require_put_call_iv_ratio: false
+    require_event_blackout: false
+    rv_lookback_days: 20
+    skew_percentile_min: 75
+    skew_percentile_required: false
+    skew_percentile_min_history: 60
+  structure:
+    dte_min: 30
+    dte_max: 45
+    dte_target: 38
+    short_put_delta_min: 0.15
+    short_put_delta_max: 0.35
+    short_put_delta_target: 0.25
+    long_call_delta_min: 0.15
+    long_call_delta_max: 0.35
+    long_call_delta_target: 0.25
+    strike_step: 5
+    max_spread_pct_of_mid: 10
+    min_open_interest: 500
+  sizing:
+    contracts: 1
+    max_new_opens_per_run: 5
+    max_new_opens_per_day: 10
+    one_structure_per_name: true
+  exits:
+    automated: false
+  kill_switch:
+    max_consecutive_errors: 3
+    latch_on_reconcile_drift: true
+    latch_on_identity_failure: true
+  execution:
+    paper_only: true
+    required_account_prefix: DU
+    order_type: limit_mid
+    fill_wait_seconds: 30
+    cancel_unfilled: true
+    entry_slots_et: ["10:00", "15:00"]
+    entry_slot_grace_minutes: 10
+    entry_timezone: America/Toronto
+    client_id: 11
+  events:
+    dates: []
+    block_days_before: 3
+
+notes:
+  - "Locked 2026-11-11 America/Toronto with Will. Standard RR only; no $20 wing, no $2,500 max-loss, no $0.50 net-debit cap."
+  - "Binding entry signal is rr25 <= -0.05. ATM IV-RV and put/call IV ratio are not binding."
+  - "Closes are manual flatten or hold to expiry. Assignment of the short put is out of scope (Epic 6)."
+  - "Testing-period risk cap is paper DUT116016 equity and margin. No $1,500 daily-loss kill."
+  - "Do not send until live IBKR paper quotes and one reconciled paper fill exist; delayed data hard-shadows."
+  - "Theme watchlist (strategies/watchlist.yaml) is a later PR; this file must not load it."
+  - "A latched kill switch (identity / reconcile drift / consecutive errors) blocks new entries only; flatten still runs."

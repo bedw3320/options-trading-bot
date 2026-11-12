@@ -4,7 +4,7 @@ This repository is the entire trading runtime. Do not import, submodule, or shar
 
 This file is **harness law**, not strategy. Strategy YAML comes later.
 
-Product-in-force (structure and closes), locked 2026-11-11: [`STATUS.md`](STATUS.md) walking-slice Epic 6 and [`knowledge/ops/exit-strategy.md`](knowledge/ops/exit-strategy.md). Standard RR (short put + long call), no protective put, no defined max loss, no automated exits; paper DUT116016 equity/margin is the testing-period risk cap; closes are manual flatten only. `strategies/active/spy-defined-risk-rr.yaml` yellow-zone exits are as-built / superseded, not current product policy.
+Product-in-force (structure and closes), locked 2026-11-11: [`STATUS.md`](STATUS.md) walking-slice Epic 6 and [`knowledge/ops/exit-strategy.md`](knowledge/ops/exit-strategy.md). Standard RR (short put + long call), no protective put, no defined max loss, no automated exits; paper DUT116016 equity/margin is the testing-period risk cap; closes are manual flatten only. The runner loads `strategies/active/us-large-cap-rr.yaml`. `strategies/active/spy-defined-risk-rr.yaml` is superseded/historical.
 
 ## First principles
 

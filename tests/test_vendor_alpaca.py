@@ -11,6 +11,7 @@ import pytest
 
 from core.brokers import SimBroker
 from core.cycle import run_cycle
+from core.entry_window import DRY_RUN_NOW
 from core.market_state import FixtureMarketState, IBMarketState, make_provider
 from core.strategy_loader import load
 from integrations.vendors.alpaca import AlpacaMarketState
@@ -18,11 +19,11 @@ from integrations.vendors.chain import occ_symbol, parse_occ
 from utils.lineage import Lineage
 
 ROOT = Path(__file__).resolve().parents[1]
-STRAT = ROOT / "strategies/active/spy-defined-risk-rr.yaml"
+STRAT = ROOT / "strategies/active/us-large-cap-rr.yaml"
 ENTRY = ROOT / "tests/fixtures/spy_snapshot_entry.json"
 FX = json.loads((ROOT / "tests/fixtures/alpaca/alpaca_spy.json").read_text())
 TODAY = date(2026, 10, 19)
-RTH_NOW = lambda: datetime(2026, 10, 19, 15, 0, tzinfo=timezone.utc)  # noqa: E731
+RTH_NOW = lambda: DRY_RUN_NOW  # noqa: E731
 
 
 def transport(calls: list, *, status: int = 200, held: dict | None = None):
@@ -47,6 +48,18 @@ def transport(calls: list, *, status: int = 200, held: dict | None = None):
     return httpx.MockTransport(handler)
 
 
+class BoundProvider:
+    def __init__(self, inner, tickers=("SPY",)):
+        self._inner = inner
+        self._tickers = list(tickers)
+
+    def listed_underlyings(self):
+        return self._tickers
+
+    def snapshot(self, rules, *, held_legs, underlying=None):
+        return self._inner.snapshot(rules, held_legs=held_legs, underlying=underlying or "SPY")
+
+
 def provider(calls, **kw):
     return AlpacaMarketState(key_id="kid", secret="sec", today=TODAY, now=RTH_NOW,
                              client=httpx.Client(transport=transport(calls, **{k: v for k, v in kw.items()})))
@@ -59,8 +72,8 @@ def rules():
 
 def test_snapshot_matches_recorded_fixture(rules):
     calls: list = []
-    snap = provider(calls).snapshot(rules, held_legs=[])
-    ref = FixtureMarketState(ENTRY).snapshot(rules, held_legs=[])
+    snap = provider(calls).snapshot(rules, held_legs=[], underlying="SPY")
+    ref = FixtureMarketState(ENTRY).snapshot(rules, held_legs=[], underlying="SPY")
     assert snap.status == "ok", snap.reason
     assert snap.source == "alpaca:indicative"
     assert snap.expiry == ref.expiry and snap.underlying_price == ref.underlying_price
@@ -75,30 +88,34 @@ def test_snapshot_matches_recorded_fixture(rules):
     assert any(c.url.params.get("page_token") == "p2" for c in calls)  # pagination followed
 
 
-def test_full_cycle_on_alpaca_enters_like_fixture(rules, tmp_path):
-    res = run_cycle(STRAT, mode="dry_run", provider=provider([]), broker=SimBroker(),
+def test_full_cycle_on_alpaca_is_record_only(rules, tmp_path):
+    res = run_cycle(STRAT, mode="dry_run", provider=BoundProvider(provider([])), broker=SimBroker(),
                     lineage=Lineage(str(tmp_path / "a.db")), allow_trading=True, now=RTH_NOW)
     ref = run_cycle(STRAT, mode="dry_run", provider=FixtureMarketState(ENTRY), broker=SimBroker(),
                     lineage=Lineage(str(tmp_path / "f.db")), allow_trading=True, now=RTH_NOW)
-    assert ref.outcome == "entered" and res.outcome == ref.outcome, res.reasons
+    assert ref.outcome == "entered"
+    assert res.outcome == "proposed_not_sent"
+    assert "indicative" in res.reasons[0] or "shadow_record_only" in res.reasons[0] or "delayed" in res.reasons[0]
 
 
 def test_held_legs_marked(rules):
     occ = "SPY261120P00700000"
     snap = provider([], held={occ: {"latestQuote": {"bp": 4.0, "ap": 4.2}}}).snapshot(
-        rules, held_legs=[{"occ": occ, "expiry": "20261120", "strike": 700.0, "right": "P"}])
+        rules, held_legs=[{"occ": occ, "expiry": "20261120", "strike": 700.0, "right": "P"}],
+        underlying="SPY")
     assert snap.held_marks == {occ: pytest.approx(4.1)}
 
 
 def test_http_error_is_unavailable_not_raise(rules):
-    snap = provider([], status=403).snapshot(rules, held_legs=[])
+    snap = provider([], status=403).snapshot(rules, held_legs=[], underlying="SPY")
     assert snap.status == "unavailable" and snap.reason.startswith("alpaca_error: http_403")
 
 
 def test_missing_credentials_abstains(rules, monkeypatch):
     monkeypatch.delenv("ALPACA_API_KEY_ID", raising=False)
     monkeypatch.delenv("ALPACA_API_SECRET_KEY", raising=False)
-    snap = AlpacaMarketState(client=httpx.Client(transport=transport([]))).snapshot(rules, held_legs=[])
+    snap = AlpacaMarketState(client=httpx.Client(transport=transport([]))).snapshot(
+        rules, held_legs=[], underlying="SPY")
     assert snap.status == "unavailable" and snap.reason == "alpaca_credentials_missing"
 
 

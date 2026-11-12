@@ -78,6 +78,7 @@ class DecisionScratch:
     kill: dict[str, Any] | None = None
     realized_pnl: float | None = None
     entries_today: int | None = None
+    opens_this_run: int | None = None
     positions: list[dict[str, Any]] = field(default_factory=list)
     snapshot: MarketSnapshot | None = None
     signals: list[SignalValue] | None = None
@@ -95,8 +96,7 @@ class DecisionScratch:
 
 def _required_signal_names(signals: list[SignalValue] | None) -> set[str]:
     if not signals:
-        return {n for n in ("rr25", "put_call_iv_ratio", "atm_iv_minus_rv",
-                            "rr25_percentile", "event_blackout")}
+        return {"rr25"}
     return {s.name for s in signals if s.required}
 
 
@@ -142,7 +142,9 @@ def _cycle_ctx(scratch: DecisionScratch) -> CycleGateCtx:
         market_data_ok=data_ok, market_data_skip=data_skip,
         flatten=scratch.flatten, has_position=bool(scratch.positions),
         kill_latched=kill_latched, kill_skip=kill_skip,
-        entries_today=scratch.entries_today, max_entries=rules.sizing.max_entries_per_day,
+        entries_today=scratch.entries_today, max_entries=rules.opens_per_day(),
+        max_per_run=rules.opens_per_run(),
+        opens_this_run=scratch.opens_this_run,
         in_entry_window=scratch.in_entry_window, window_skip=window_skip,
         dte_days=days, dte_skip=dte_skip, phase=scratch.phase,
         signals=scratch.signals, signals_skip=sig_skip,
@@ -249,8 +251,11 @@ def build_record(
         "snapshot_reason": None if snap is None else snap.reason,
         "has_position": bool(scratch.positions),
         "kill_note": _kill_note(scratch),
-        "max_entries": rules.sizing.max_entries_per_day,
-        "entry_window": rules.execution.entry_window_et,
+        "max_entries": rules.opens_per_day(),
+        "max_per_run": rules.opens_per_run(),
+        "entry_window": rules.execution.entry_slots_et or rules.execution.entry_window_et,
+        "entry_slots": rules.execution.entry_slots_et,
+        "entry_timezone": rules.execution.entry_timezone,
         "expiry": None if snap is None else snap.expiry,
         "dte_min": rules.structure.dte_min,
         "dte_max": rules.structure.dte_max,
@@ -262,11 +267,8 @@ def build_record(
         "short_put_delta_max": rules.structure.short_put_delta_max,
         "long_call_delta_min": rules.structure.long_call_delta_min,
         "long_call_delta_max": rules.structure.long_call_delta_max,
-        "wing_width": rules.structure.wing_width,
         "min_oi": rules.structure.min_open_interest,
         "max_spread": rules.structure.max_spread_pct_of_mid,
-        "max_net_debit": rules.structure.max_net_debit,
-        "max_loss_cap": rules.sizing.max_loss_usd,
         "error": scratch.error,
         "fallback_reasons": scratch.fallback_reasons,
     }
@@ -301,6 +303,7 @@ def build_record(
             "kill_reason": None if not scratch.kill else scratch.kill.get("reason"),
             "realized_pnl": scratch.realized_pnl,
             "entries_today": scratch.entries_today,
+            "opens_this_run": scratch.opens_this_run,
             "has_position": bool(scratch.positions),
             "position": scratch.positions[0] if scratch.positions else None,
             "rr25_history": scratch.rr25_history or [],
@@ -367,10 +370,10 @@ def enrich_entry_evals(scratch: DecisionScratch) -> None:
     snap = scratch.snapshot
     if snap is None or snap.status != "ok":
         return
-    if scratch.signals is None:
+    if scratch.signals is None and scratch.phase == "entry":
         hist = scratch.rr25_history or []
         scratch.signals = compute_signals(snap, scratch.rules, rr25_history=hist)
-    if scratch.construction is None:
+    if scratch.construction is None and scratch.phase == "entry":
         scratch.construction = evaluate_construction(snap, scratch.rules)
 
 
@@ -409,6 +412,7 @@ def replay_stored(record: dict[str, Any]) -> dict[str, Any]:
         kill={"reason": state.get("kill_reason"), "ts": ""} if state.get("kill_latched") else None,
         realized_pnl=state.get("realized_pnl"),
         entries_today=state.get("entries_today"),
+        opens_this_run=state.get("opens_this_run"),
         positions=[state["position"]] if state.get("position") else [],
         snapshot=snap,
         rr25_history=list(state.get("rr25_history") or []),

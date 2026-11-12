@@ -163,13 +163,34 @@ class StrategyConfig(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Deterministic rules (v0). When present, the deterministic cycle
-# (core/cycle.py) decides; no LLM is in the decision path.
+# Deterministic rules. When present, the deterministic cycle (core/cycle.py)
+# decides; no LLM is in the decision path.
+#
+# In-force engine: standard_risk_reversal_v1 (short put + long call).
+# defined_risk_risk_reversal_v0 remains parseable for the historical YAML
+# only; the runner refuses to execute it.
 # ---------------------------------------------------------------------------
+
+IN_FORCE_ENGINE = "standard_risk_reversal_v1"
+HISTORICAL_ENGINE = "defined_risk_risk_reversal_v0"
+
+
+class UniverseRules(BaseModel):
+    """US large-cap universe. Never loaded from strategies/watchlist.yaml."""
+
+    source: Literal["sp500"] = "sp500"
+    tickers: list[str] = Field(
+        default_factory=list,
+        description="Optional explicit overlay. Empty = full source list. Not the theme watchlist.",
+    )
 
 
 class SignalRules(BaseModel):
-    """Entry signals. Convention: rr25 = IV(25d call) - IV(25d put), IV as decimals."""
+    """Entry signals. Convention: rr25 = IV(25d call) - IV(25d put), IV as decimals.
+
+    In-force binding signal is rr25 only. Other fields may be computed for
+    lineage but are not required unless explicitly flagged.
+    """
 
     target_abs_delta: float = Field(default=0.25, gt=0.0, lt=0.5)
     max_rr25: float = Field(
@@ -178,29 +199,41 @@ class SignalRules(BaseModel):
         description="Entry needs rr25 <= this (-0.05 = put wing 5 vol pts richer).",
     )
     min_put_call_iv_ratio: float = Field(default=1.15, ge=1.0)
-    require_iv_over_rv: bool = True
+    require_iv_over_rv: bool = False
+    require_event_blackout: bool = False
+    require_put_call_iv_ratio: bool = False
     rv_lookback_days: int = Field(default=20, ge=5, le=252)
     skew_percentile_min: float = Field(default=75.0, ge=0.0, le=100.0)
     skew_percentile_required: bool = Field(
         default=False,
-        description="Gate on own rr25 history. Off until enough history is stored.",
+        description="Not a binding gate for the locked core.",
     )
     skew_percentile_min_history: int = Field(default=60, ge=10)
 
 
 class StructureRules(BaseModel):
-    """Defined-risk risk reversal: short put + long wing put + long call, one expiry."""
+    """Standard RR: short 25d put + long 25d call, one expiry, 1 lot.
+
+    wing_width / max_net_debit are historical defined-risk fields (optional).
+    """
 
     dte_min: int = Field(default=30, ge=1)
     dte_max: int = Field(default=45, ge=1)
     dte_target: int = Field(default=38, ge=1)
-    short_put_delta_min: float = Field(default=0.20, gt=0.0, lt=0.5)
-    short_put_delta_max: float = Field(default=0.25, gt=0.0, lt=0.5)
-    short_put_delta_target: float = Field(default=0.225, gt=0.0, lt=0.5)
-    long_call_delta_min: float = Field(default=0.10, gt=0.0, lt=0.5)
-    long_call_delta_max: float = Field(default=0.30, gt=0.0, lt=0.5)
-    wing_width: float = Field(default=20.0, gt=0.0, description="Short put strike minus wing strike, $.")
-    max_net_debit: float = Field(default=0.50, ge=0.0, description="Per-share combo debit cap.")
+    short_put_delta_min: float = Field(default=0.15, gt=0.0, lt=0.5)
+    short_put_delta_max: float = Field(default=0.35, gt=0.0, lt=0.5)
+    short_put_delta_target: float = Field(default=0.25, gt=0.0, lt=0.5)
+    long_call_delta_min: float = Field(default=0.15, gt=0.0, lt=0.5)
+    long_call_delta_max: float = Field(default=0.35, gt=0.0, lt=0.5)
+    long_call_delta_target: float = Field(default=0.25, gt=0.0, lt=0.5)
+    wing_width: float | None = Field(
+        default=None,
+        description="Historical defined-risk wing ($). None for standard RR.",
+    )
+    max_net_debit: float | None = Field(
+        default=None,
+        description="Historical defined-risk per-share debit cap. None for standard RR.",
+    )
     strike_step: float = Field(default=5.0, gt=0.0, description="Only strikes on this grid are quoted.")
     max_spread_pct_of_mid: float = Field(default=10.0, gt=0.0, le=100.0)
     min_open_interest: int = Field(default=500, ge=0)
@@ -211,35 +244,52 @@ class StructureRules(BaseModel):
             raise ValueError("dte_min <= dte_target <= dte_max required")
         if not (self.short_put_delta_min <= self.short_put_delta_target <= self.short_put_delta_max):
             raise ValueError("short put delta target outside [min, max]")
-        if self.long_call_delta_min > self.long_call_delta_max:
-            raise ValueError("long_call_delta_min > long_call_delta_max")
+        if not (self.long_call_delta_min <= self.long_call_delta_target <= self.long_call_delta_max):
+            raise ValueError("long call delta target outside [min, max]")
+        if self.wing_width is not None and self.wing_width <= 0:
+            raise ValueError("wing_width must be positive when set")
+        if self.max_net_debit is not None and self.max_net_debit < 0:
+            raise ValueError("max_net_debit must be >= 0 when set")
         return self
 
 
 class SizingRules(BaseModel):
     contracts: Literal[1] = Field(default=1, description="v0 is one combo, fixed.")
-    max_loss_usd: float = Field(default=2500.0, gt=0.0, le=5000.0)
-    max_open_positions: Literal[1] = 1
-    max_entries_per_day: int = Field(default=1, ge=1, le=1)
+    max_new_opens_per_run: int = Field(default=5, ge=1)
+    max_new_opens_per_day: int = Field(default=10, ge=1)
+    one_structure_per_name: Literal[True] = True
+    max_loss_usd: float | None = Field(
+        default=None,
+        description="Historical defined-risk cap. None for standard RR (paper account is the cap).",
+    )
+    max_open_positions: int | None = Field(
+        default=None,
+        description="None = no outstanding position-count cap.",
+    )
+    max_entries_per_day: int | None = Field(
+        default=None,
+        description="Legacy alias; in-force path uses max_new_opens_per_day.",
+    )
 
 
 class DeterministicExitRules(BaseModel):
-    time_stop_dte: int = Field(default=21, ge=0)
-    underlying_stop_pct_below_short_put: float = Field(
-        default=3.0,
-        ge=0.0,
-        le=20.0,
-        description="As-built SPY stop: this percent below the short put. "
-                    "Floored at long put + 25% of the wing so the stop stays above the protective put. "
-                    "Superseded product intent (no protective put / no automated exits); "
-                    "see knowledge/ops/exit-strategy.md.",
+    """Product-in-force: no automated exits. Close is manual flatten only."""
+
+    automated: bool = Field(
+        default=False,
+        description="False = hold until manual flatten or expiry. Yellow-zone numbers below are historical.",
     )
-    take_profit_usd: float = Field(default=1000.0, gt=0.0)
-    stop_loss_usd: float = Field(default=1250.0, gt=0.0)
+    time_stop_dte: int | None = Field(default=None, ge=0)
+    underlying_stop_pct_below_short_put: float | None = Field(default=None, ge=0.0, le=20.0)
+    take_profit_usd: float | None = Field(default=None, gt=0.0)
+    stop_loss_usd: float | None = Field(default=None, gt=0.0)
 
 
 class KillSwitchRules(BaseModel):
-    daily_loss_limit_usd: float = Field(default=1500.0, gt=0.0)
+    daily_loss_limit_usd: float | None = Field(
+        default=None,
+        description="Dropped for the locked core; paper DUT116016 equity/margin is the testing-period cap.",
+    )
     max_consecutive_errors: int = Field(default=3, ge=1)
     latch_on_reconcile_drift: Literal[True] = True
     latch_on_identity_failure: Literal[True] = True
@@ -251,20 +301,30 @@ class ExecutionRules(BaseModel):
     order_type: Literal["limit_mid"] = "limit_mid"
     fill_wait_seconds: int = Field(default=30, ge=1, le=600)
     cancel_unfilled: Literal[True] = True
-    entry_window_et: tuple[str, str] = ("10:00", "15:30")
+    entry_slots_et: tuple[str, ...] = ("10:00", "15:00")
+    entry_slot_grace_minutes: int = Field(default=10, ge=0, le=30)
+    entry_timezone: Literal["America/Toronto"] = "America/Toronto"
+    entry_window_et: tuple[str, str] | None = Field(
+        default=None,
+        description="Legacy inclusive range. Ignored when entry_slots_et is set.",
+    )
     client_id: int = Field(default=11, ge=0)
 
 
 class EventRules(BaseModel):
-    """Entry blocked if a listed event is within `block_days_before` calendar days."""
+    """Informational unless signals.require_event_blackout (off for the locked core)."""
 
     dates: list[str] = Field(default_factory=list, description="YYYY-MM-DD")
     block_days_before: int = Field(default=3, ge=0)
 
 
 class DeterministicRules(BaseModel):
-    engine: Literal["defined_risk_risk_reversal_v0"]
-    underlying: str
+    engine: Literal["standard_risk_reversal_v1", "defined_risk_risk_reversal_v0"]
+    underlying: str | None = Field(
+        default=None,
+        description="Single-name historical strategies. In-force universe replaces this.",
+    )
+    universe: UniverseRules | None = None
     signals: SignalRules = Field(default_factory=SignalRules)
     structure: StructureRules = Field(default_factory=StructureRules)
     sizing: SizingRules = Field(default_factory=SizingRules)
@@ -272,6 +332,34 @@ class DeterministicRules(BaseModel):
     kill_switch: KillSwitchRules = Field(default_factory=KillSwitchRules)
     execution: ExecutionRules = Field(default_factory=ExecutionRules)
     events: EventRules = Field(default_factory=EventRules)
+
+    @model_validator(mode="after")
+    def _engine_shape(self) -> "DeterministicRules":
+        if self.engine == HISTORICAL_ENGINE:
+            if not self.underlying:
+                raise ValueError("defined-risk engine requires underlying")
+            if self.structure.wing_width is None:
+                raise ValueError("defined-risk engine requires wing_width")
+        if self.engine == IN_FORCE_ENGINE:
+            if self.universe is None:
+                raise ValueError("standard RR requires universe (sp500); do not load watchlist.yaml")
+            if self.structure.wing_width is not None:
+                raise ValueError("standard RR has no protective put / wing")
+            if self.structure.max_net_debit is not None:
+                raise ValueError("standard RR has no net-debit cap")
+            if self.exits.automated:
+                raise ValueError("standard RR has no automated exits")
+            if self.sizing.max_loss_usd is not None:
+                raise ValueError("standard RR has no coded max-loss cap")
+        return self
+
+    def opens_per_run(self) -> int:
+        return self.sizing.max_new_opens_per_run
+
+    def opens_per_day(self) -> int:
+        if self.sizing.max_new_opens_per_day:
+            return self.sizing.max_new_opens_per_day
+        return self.sizing.max_entries_per_day or 10
 
 
 StrategyConfig.model_rebuild()

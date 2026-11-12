@@ -1,6 +1,6 @@
 #!/bin/bash
 # Idempotent Mini setup: launchd agents (start at login, watchdog 120s, heartbeat 600s,
-# cycle every 15 min record-only) + power settings.
+# cycle weekdays 10:00 and 15:00 America/Toronto record-only) + power settings.
 # Run from the repo:  bash ops/mini/install.sh
 set -euo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"

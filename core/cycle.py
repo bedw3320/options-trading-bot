@@ -1,12 +1,12 @@
-"""Deterministic run-once cycle (Epics 1-4, v0).
+"""Deterministic run-once cycle (in-force standard RR).
 
-reconcile -> mark-to-market -> signals -> decision -> intent -> guarded order ->
+reconcile -> mark-to-market -> signals -> decision -> intent -> gated order ->
 fill -> debrief -> reconcile -> stop. Every artifact is written under one cycle_id.
 Abstention is a successful outcome. Data problems abstain; they never guess.
 
-As-built YAML evaluate_exit still runs (defined-risk yellow zone). That is
-superseded product intent; product-in-force close is manual flatten. See
-knowledge/ops/exit-strategy.md. Do not change this cycle's logic in a docs PR.
+Product-in-force (locked 2026-11-11): standard RR (short put + long call),
+rr25-only binding entry, no automated exits, two weekday slots (10:00 and
+15:00 America/Toronto wall clock). See knowledge/ops/exit-strategy.md.
 """
 
 from __future__ import annotations
@@ -28,17 +28,20 @@ from core.decision_record import (
     enrich_entry_evals,
     recording_enabled,
 )
+from core.entry_window import in_entry_slot
 from core.gates import evaluate_exit_gates
 from core.guarded_broker import GuardedReject
 from core.identity import IdentityError
 from core.market_state import MarketStateProvider
 from core.reconcile import reconcile
 from core.rr_rules import build_entry, build_exit, evaluate_exit
-from core.shadow import TaggedLineage, shadow_refusal, shadow_tag
+from core.send_gate import paper_send_reason
+from core.shadow import TaggedLineage, shadow_tag
 from core.signals import compute_signals, failing_required
 from core.strategy_loader import load as load_strategy
-from schemas.cycle import ComboIntent, Decision
-from schemas.strategy import StrategyConfig
+from core.universe import name_key, open_underlyings, position_underlying, resolve_universe, vendor_symbol
+from schemas.cycle import ComboIntent, Decision, MarketSnapshot
+from schemas.strategy import IN_FORCE_ENGINE, StrategyConfig
 from utils.lineage import Lineage
 from utils.logging import get_logger
 from utils.time_et import ET
@@ -68,15 +71,22 @@ def _et_midnight_utc_iso(now: datetime) -> str:
     return et.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc).isoformat(timespec="seconds")
 
 
-def _in_window(as_of: str, window: tuple[str, str]) -> bool:
-    t = datetime.fromisoformat(as_of).astimezone(ET)
-    lo, hi = (dtime.fromisoformat(x) for x in window)
-    return t.weekday() < 5 and lo <= t.time() <= hi
-
-
 def _rth(now: datetime) -> bool:
     t = now.astimezone(ET)
     return t.weekday() < 5 and dtime(9, 30) <= t.time() < dtime(16, 0)
+
+
+def _vendor(data_source: str) -> str:
+    src = (data_source or "ib").strip().lower()
+    return src if src in ("cboe", "alpaca") else "ib"
+
+
+def _snapshot(
+    provider: MarketStateProvider, rules, ticker: str, held_legs: list[dict], *, vendor: str,
+) -> MarketSnapshot:
+    return provider.snapshot(
+        rules, held_legs=held_legs, underlying=vendor_symbol(ticker, vendor=vendor),
+    )
 
 
 def run_cycle(
@@ -100,6 +110,10 @@ def run_cycle(
     if strategy.rules is None:
         raise ValueError(f"{path} has no deterministic `rules:` block")
     rules = strategy.rules
+    if rules.engine != IN_FORCE_ENGINE:
+        raise ValueError(
+            f"{path} engine {rules.engine!r} is superseded; load strategies/active/us-large-cap-rr.yaml"
+        )
     name = strategy.name
     sha = hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -124,8 +138,6 @@ def run_cycle(
         clock=clock(), flatten=flatten, allow_trading=allow_trading,
         data_source=tag or data_source,
     )
-    # Recording is not gated on mode. Paper is the primary case; dry_run/live
-    # still write the same schema. Not acting is a decision.
     assert recording_enabled(mode, scratch.trading_mode)
 
     wal_written = False
@@ -165,13 +177,8 @@ def run_cycle(
 
     account_id: str | None = None
     try:
-        # 1. Kill switch (latched until `rearm`): blocks new entries only. Risk-reducing
-        #    closes of existing strategy positions (as-built YAML evaluate_exit, superseded
-        #    — see knowledge/ops/exit-strategy.md — or product-in-force `flatten`) still run,
-        #    through the same identity gate, reconcile and GuardedBroker path.
         kill = lineage.kill_state(name, mode)
 
-        # 2. Paper-only enforcement. Dry-run never touches a broker account.
         if mode == "paper":
             try:
                 if identity_check is None:
@@ -196,121 +203,265 @@ def run_cycle(
             if not scratch.market_open:
                 return abstain(["market_closed (outside 09:30-16:00 ET weekdays)"])
 
-        # 3. Reconcile before deciding (IBKR is authoritative).
-        rec = reconcile(broker, lineage, strategy=name, mode=mode, underlying=rules.underlying,
+        rec = reconcile(broker, lineage, strategy=name, mode=mode, underlying=None,
                         cycle_id=cid, account_id=account_id)
         scratch.reconcile = rec
         lineage.record(cid, "reconcile", {"phase": "pre", **rec})
         if not rec["ok"]:
-            # Drift blocks exits too: the position we would close cannot be verified.
             lineage.latch_kill(name, mode, "reconcile drift: " + "; ".join(rec["drift"])[:500])
             scratch.kill = lineage.kill_state(name, mode)
             return abstain(["reconcile_drift"] + rec["drift"])
 
-        # 4. Daily loss latch.
         day_start = _et_midnight_utc_iso(clock())
         realized = lineage.realized_pnl_since(name, mode, day_start)
         scratch.realized_pnl = realized
-        if realized <= -rules.kill_switch.daily_loss_limit_usd:
-            lineage.latch_kill(name, mode, f"daily realized loss ${realized:.0f}")
         kill = lineage.kill_state(name, mode)
         scratch.kill = kill
         kill_note = f"kill_switch_latched: {kill['reason']} (since {kill['ts']})" if kill else None
 
-        # 5. Market state.
         positions = lineage.open_positions(name, mode)
         scratch.positions = positions
-        held_legs = [leg for p in positions for leg in p["legs"]]
-        snap = provider.snapshot(rules, held_legs=held_legs)
-        scratch.snapshot = snap
-        lineage.record(cid, "market_snapshot", snap.model_dump(mode="json"))
-        if snap.status != "ok":
-            extra = ["open position: exits not evaluable this cycle"] if positions else []
-            return abstain([f"market_data_unavailable: {snap.reason}"] + extra + ([kill_note] if kill_note else []))
+        scratch.in_entry_window = in_entry_slot(clock(), rules)
 
-        # 6a. Manage the open position (max one).
+        held_by_und: dict[str, list[dict]] = {}
+        for pos in positions:
+            held_by_und.setdefault(position_underlying(pos), []).append(pos)
+
+        vendor = _vendor(data_source)
+        held_snaps: dict[str, MarketSnapshot] = {}
         if positions:
-            pos = positions[0]
-            scratch.phase = "flatten" if flatten else "exit"
-            mtm = mark_to_market(pos, snap, rules, daily_realized_pnl_usd=realized)
-            lineage.record(cid, "mark_to_market", mtm.model_dump(mode="json"))
-            trigger, mark, why = evaluate_exit(pos, snap, rules)
-            if flatten:
-                why = [f"manual flatten requested (rule trigger: {trigger})"] + why
-                trigger = "manual_flatten"
-            scratch.exit_trigger = trigger
-            scratch.exit_reasons = why
-            scratch.exit_gates = evaluate_exit_gates(
-                pos, snap, rules, flatten=flatten, daily_pnl=realized,
-            )
-            lineage.record(cid, "signals", {"exit_evaluation": {"position_id": pos["position_id"],
-                                                                 "trigger": trigger, "mark": mark, "reasons": why,
-                                                                 "daily_loss_breach": mtm.daily_loss_breach}})
-            if trigger is None:
-                scratch.phase = "hold"
-                commit_wal("abstain", cycle_outcome="held")
-                return finish("held", why + ([kill_note] if kill_note else []),
-                              Decision(action="abstain", reasons=["holding position"] + why))
-            intent = build_exit(pos, mark, rules, strategy_name=name, idempotency_key=f"{cid}:close")
-            if intent is None:
-                return abstain([f"exit trigger {trigger} but no leg marks to price the close"] + why)
-            if kill:
-                lineage.record(cid, "kill_switch", {"latched": True, "reason": kill["reason"], "since": kill["ts"],
-                                                    "action": "exit_allowed_while_latched", "trigger": trigger})
-                why = why + [f"{kill_note}; risk-reducing exit allowed"]
-                scratch.exit_reasons = why
-            decision = Decision(action="exit", reasons=why, exit_trigger=trigger)
-            commit_wal("trade", cycle_outcome="exit")
-            lineage.record(cid, "decision", decision.model_dump(mode="json"))
-            res = _execute(cid, intent, mode, broker, lineage, rules, name, finish, trigger=trigger,
-                           exit_reasons=why, record_only=bool(tag), shadow=tag, account_id=account_id)
-            if kill:
-                res.reasons.append("exit ran while kill switch latched")
-                lineage.annotate_reasons(cid, res.reasons)
-            return res
+            for und, group in held_by_und.items():
+                legs = [leg for p in group for leg in p["legs"]]
+                snap = _snapshot(provider, rules, und, legs, vendor=vendor)
+                held_snaps[und] = snap
+                if scratch.snapshot is None:
+                    scratch.snapshot = snap
+                lineage.record(cid, "market_snapshot", snap.model_dump(mode="json"))
+                if snap.status != "ok":
+                    extra = ["open position: marks not evaluable this cycle"]
+                    return abstain([f"market_data_unavailable: {snap.reason}"] + extra + ([kill_note] if kill_note else []))
 
-        scratch.phase = "entry"
+            for pos in positions:
+                und = position_underlying(pos)
+                snap = held_snaps[und]
+                mtm = mark_to_market(pos, snap, rules, daily_realized_pnl_usd=realized)
+                lineage.record(cid, "mark_to_market", mtm.model_dump(mode="json"))
+                trigger, mark, why = evaluate_exit(pos, snap, rules)
+                if flatten:
+                    why = [f"manual flatten requested (rule trigger: {trigger})"] + why
+                    trigger = "manual_flatten"
+                scratch.exit_trigger = trigger
+                scratch.exit_reasons = why
+                scratch.exit_gates = evaluate_exit_gates(
+                    pos, snap, rules, flatten=flatten, daily_pnl=realized,
+                )
+                lineage.record(cid, "signals", {"exit_evaluation": {"position_id": pos["position_id"],
+                                                                     "trigger": trigger, "mark": mark, "reasons": why,
+                                                                     "daily_loss_breach": mtm.daily_loss_breach}})
+
+            if flatten:
+                scratch.phase = "flatten"
+                results: list[tuple[str, list[str]]] = []
+                for pos in positions:
+                    und = position_underlying(pos)
+                    snap = held_snaps[und]
+                    _t, mark, why = evaluate_exit(pos, snap, rules)
+                    why = [f"manual flatten requested"] + why
+                    intent = build_exit(pos, mark, rules, strategy_name=name,
+                                        idempotency_key=f"{cid}:close:{pos['position_id']}")
+                    if intent is None:
+                        return abstain(["flatten requested but no leg marks to price the close"] + why)
+                    if kill:
+                        lineage.record(cid, "kill_switch", {
+                            "latched": True, "reason": kill["reason"], "since": kill["ts"],
+                            "action": "exit_allowed_while_latched", "trigger": "manual_flatten",
+                        })
+                        why = why + [f"{kill_note}; risk-reducing exit allowed"]
+                    scratch.exit_reasons = why
+                    decision = Decision(action="exit", reasons=why, exit_trigger="manual_flatten")
+                    commit_wal("trade", cycle_outcome="exit")
+                    lineage.record(cid, "decision", decision.model_dump(mode="json"))
+                    blocked = paper_send_reason(
+                        mode=mode, data_source=data_source, snapshot=snap, lineage=lineage,
+                    )
+                    o, r = _place(
+                        cid, intent, mode, broker, lineage, rules, name,
+                        trigger="manual_flatten", exit_reasons=why,
+                        record_only=bool(tag) or bool(blocked),
+                        shadow=tag, block_reason=blocked, account_id=account_id,
+                    )
+                    if kill:
+                        r = r + ["exit ran while kill switch latched"]
+                    results.append((o, r))
+                outcome, reasons = _combine(results)
+                if kill and outcome != "error":
+                    lineage.annotate_reasons(cid, reasons)
+                return finish(outcome, reasons)
+
+            # Hold existing structures. New names may still open below.
+            scratch.phase = "hold"
+
         if flatten:
             return abstain(["flatten: no open strategy position"] + ([kill_note] if kill_note else []))
+
+        scratch.entries_today = lineage.entries_since(name, mode, day_start)
+        scratch.rr25_history = lineage.signal_history(name, mode, "rr25")
+        scratch.opens_this_run = 0
+
+        def _hold(reasons: list[str]) -> CycleResult:
+            scratch.phase = "hold"
+            enrich_entry_evals(scratch)
+            commit_wal("abstain", cycle_outcome="held")
+            return finish("held", reasons, Decision(action="abstain", reasons=reasons))
+
         if kill:
-            scratch.entries_today = lineage.entries_since(name, mode, day_start)
-            scratch.rr25_history = lineage.signal_history(name, mode, "rr25")
-            scratch.in_entry_window = _in_window(snap.as_of, rules.execution.entry_window_et)
+            if positions:
+                return _hold(["holding position; no automated exits", kill_note, "new entries blocked"])
+            scratch.phase = "entry"
             enrich_entry_evals(scratch)
             return abstain([kill_note, "new entries blocked"])
 
-        # 6b. Entry.
-        entries = lineage.entries_since(name, mode, day_start)
-        scratch.entries_today = entries
-        if entries >= rules.sizing.max_entries_per_day:
-            scratch.rr25_history = lineage.signal_history(name, mode, "rr25")
-            scratch.in_entry_window = _in_window(snap.as_of, rules.execution.entry_window_et)
-            enrich_entry_evals(scratch)
-            return abstain([f"max_entries_per_day {rules.sizing.max_entries_per_day} reached"])
-        history = lineage.signal_history(name, mode, "rr25")
-        scratch.rr25_history = history
-        signals = compute_signals(snap, rules, rr25_history=history)
-        scratch.signals = signals
-        lineage.record(cid, "signals", {"signals": [s.model_dump(mode="json") for s in signals]})
-        scratch.in_entry_window = _in_window(snap.as_of, rules.execution.entry_window_et)
         if not scratch.in_entry_window:
+            reason = (f"outside entry window {rules.execution.entry_slots_et} "
+                      f"{rules.execution.entry_timezone}")
+            if positions:
+                return _hold(["holding position; no automated exits", reason])
+            scratch.phase = "entry"
             enrich_entry_evals(scratch)
-            return abstain([f"outside entry window {rules.execution.entry_window_et} ET"])
-        failing = failing_required(signals)
-        if failing:
+            return abstain([reason])
+
+        if scratch.entries_today >= rules.opens_per_day():
+            reason = f"max_new_opens_per_day {rules.opens_per_day()} reached"
+            if positions:
+                return _hold(["holding position; no automated exits", reason])
+            scratch.phase = "entry"
             enrich_entry_evals(scratch)
-            return abstain([f"signal {s.name}={s.value} vs {s.threshold} failed"
-                            + (f" ({s.note})" if s.note else "") for s in failing])
-        intent, why = build_entry(snap, rules, strategy_name=name, idempotency_key=f"{cid}:open")
-        scratch.entry_reasons = why
+            return abstain([reason])
+
+        scratch.phase = "entry"
+
+        tickers = resolve_universe(rules, provider)
+        held_names = open_underlyings(positions)
+        held_keys = {name_key(n) for n in held_names}
+        history = scratch.rr25_history or []
+        scan: list[dict[str, Any]] = []
+        passing: list[tuple[float, str, MarketSnapshot, list, ComboIntent, list[str]]] = []
+        first_ok: MarketSnapshot | None = scratch.snapshot
+
+        for ticker in tickers:
+            if name_key(ticker) in held_keys:
+                scan.append({"ticker": ticker, "passed": False, "reason": "already_open"})
+                continue
+            snap = _snapshot(provider, rules, ticker, [], vendor=vendor)
+            if first_ok is None and snap.status == "ok":
+                first_ok = snap
+            if snap.status != "ok":
+                scan.append({"ticker": ticker, "passed": False, "reason": snap.reason, "status": snap.status})
+                if scratch.snapshot is None:
+                    scratch.snapshot = snap
+                continue
+            sigs = compute_signals(snap, rules, rr25_history=history)
+            rr = next((s for s in sigs if s.name == "rr25"), None)
+            fail = failing_required(sigs)
+            if fail:
+                scan.append({
+                    "ticker": ticker, "passed": False, "rr25": None if rr is None else rr.value,
+                    "reason": f"signal {fail[0].name}={fail[0].value} vs {fail[0].threshold} failed",
+                })
+                if scratch.signals is None:
+                    scratch.signals = sigs
+                    scratch.snapshot = snap
+                continue
+            intent, why = build_entry(
+                snap, rules, strategy_name=name, idempotency_key=f"{cid}:open:{ticker}",
+            )
+            if intent is None:
+                scan.append({
+                    "ticker": ticker, "passed": False, "rr25": None if rr is None else rr.value,
+                    "reason": why[0] if why else "construction failed",
+                })
+                if scratch.snapshot is None:
+                    scratch.snapshot = snap
+                    scratch.signals = sigs
+                    scratch.entry_reasons = why
+                continue
+            rr_val = float(rr.value) if rr is not None and rr.value is not None else 0.0
+            passing.append((rr_val, ticker, snap, sigs, intent, why))
+            scan.append({"ticker": ticker, "passed": True, "rr25": rr_val})
+
+        lineage.record(cid, "universe_scan", {
+            "tickers": tickers, "held": sorted(held_names), "n_pass": len(passing), "rows": scan,
+        })
+        passing.sort(key=lambda row: (row[0], row[1]))  # most negative rr25 first
+        remaining_day = rules.opens_per_day() - scratch.entries_today
+        take_n = max(0, min(rules.opens_per_run(), remaining_day, len(passing)))
+        chosen = passing[:take_n]
+
+        if first_ok is not None and scratch.snapshot is None:
+            scratch.snapshot = first_ok
+        if chosen:
+            scratch.snapshot = chosen[0][2]
+            scratch.signals = chosen[0][3]
+            scratch.entry_reasons = (
+                [f"ranked {len(passing)} names by rr25; opening {len(chosen)}"]
+                + [w for row in chosen for w in row[5]]
+            )
+        elif passing:
+            scratch.snapshot = passing[0][2]
+            scratch.signals = passing[0][3]
         enrich_entry_evals(scratch)
-        if intent is None:
-            return abstain(why)
-        decision = Decision(action="enter", reasons=["all required signals passed"] + why)
+        if scratch.snapshot is not None:
+            lineage.record(cid, "market_snapshot", scratch.snapshot.model_dump(mode="json"))
+        if scratch.signals is not None:
+            lineage.record(cid, "signals", {
+                "signals": [s.model_dump(mode="json") for s in scratch.signals],
+            })
+
+        if not chosen:
+            reasons = []
+            statuses = [r.get("status") for r in scan]
+            only_unavail = bool(scan) and all(s == "unavailable" for s in statuses) and not passing
+            if only_unavail:
+                first_reason = next((r.get("reason") for r in scan if r.get("reason")), "unavailable")
+                reasons = [f"market_data_unavailable: {first_reason}"]
+            elif not passing:
+                failed_sig = next((r for r in scan if str(r.get("reason", "")).startswith("signal rr25")), None)
+                if failed_sig:
+                    reasons = [failed_sig["reason"]]
+                else:
+                    reasons = ["no liquid names cleared rr25 and 25d/25d construction"]
+            else:
+                reasons = [f"max_new_opens_per_run {rules.opens_per_run()} reached"]
+            if positions:
+                return _hold(
+                    ["holding position; no automated exits"] + reasons + ([kill_note] if kill_note else []),
+                )
+            return abstain(reasons + ([kill_note] if kill_note else []))
+
+        decision = Decision(
+            action="enter",
+            reasons=["all required signals passed"] + scratch.entry_reasons,
+        )
         commit_wal("trade", cycle_outcome="enter")
         lineage.record(cid, "decision", decision.model_dump(mode="json"))
-        return _execute(cid, intent, mode, broker, lineage, rules, name, finish,
-                        record_only=bool(tag), shadow=tag, account_id=account_id)
+
+        placed: list[tuple[str, list[str]]] = []
+        for _rr, ticker, snap, _sigs, intent, why in chosen:
+            blocked = paper_send_reason(
+                mode=mode, data_source=data_source, snapshot=snap, lineage=lineage,
+            )
+            o, r = _place(
+                cid, intent, mode, broker, lineage, rules, name,
+                record_only=bool(tag) or bool(blocked),
+                shadow=tag, block_reason=blocked, account_id=account_id,
+            )
+            placed.append((o, r if r else why))
+            scratch.opens_this_run = (scratch.opens_this_run or 0) + 1
+        outcome, reasons = _combine(placed)
+        if positions and outcome in ("abstained", "proposed_not_sent"):
+            reasons = ["holding existing positions"] + reasons
+        return finish(outcome, reasons)
+
     except Exception as exc:  # never crash the scheduler; record and count
         log.exception("cycle %s failed", cid)
         scratch.phase = "error"
@@ -319,18 +470,31 @@ def run_cycle(
         return finish("error", [f"{type(exc).__name__}: {exc}"])
 
 
-def _execute(cid, intent: ComboIntent, mode, broker, lineage: Lineage, rules, name, finish, *,
-             trigger: str | None = None, exit_reasons: list[str] | None = None,
-             record_only: bool = False, shadow: str | None = None,
-             account_id: str | None = None) -> CycleResult:
+def _combine(results: list[tuple[str, list[str]]]) -> tuple[str, list[str]]:
+    if not results:
+        return "abstained", ["no results"]
+    reasons: list[str] = []
+    for _o, r in results:
+        reasons.extend(r)
+    outcomes = [o for o, _ in results]
+    for preferred in ("error", "entered", "exited", "proposed_not_sent", "held", "abstained"):
+        if preferred in outcomes:
+            return preferred, reasons
+    return outcomes[0], reasons
+
+
+def _place(cid, intent: ComboIntent, mode, broker, lineage: Lineage, rules, name, *,
+           trigger: str | None = None, exit_reasons: list[str] | None = None,
+           record_only: bool = False, shadow: str | None = None,
+           block_reason: str | None = None,
+           account_id: str | None = None) -> tuple[str, list[str]]:
     lineage.record(cid, "intent", intent.model_dump(mode="json"))
     if record_only:
-        # Shadow / delayed data: journal the intent, never call broker.place.
-        reason = shadow_refusal(shadow or "cboe_delayed")
+        reason = block_reason or f"shadow_record_only: data_source={shadow or 'delayed'} cannot place orders"
         lineage.record(cid, "order", {"sent": False, "reason": reason})
-        return finish("proposed_not_sent", [reason])
+        return "proposed_not_sent", [reason]
     if lineage.order_exists(intent.idempotency_key):
-        return finish("abstained", [f"duplicate idempotency key {intent.idempotency_key}"])
+        return "abstained", [f"duplicate idempotency key {intent.idempotency_key}"]
     lineage.insert_order(intent=intent.model_dump(mode="json"), cycle_id=cid, mode=mode, status="proposed")
 
     def revalidate(i: ComboIntent) -> None:
@@ -346,10 +510,12 @@ def _execute(cid, intent: ComboIntent, mode, broker, lineage: Lineage, rules, na
             if i.action != "SELL" or legs != held or i.quantity != pos["quantity"]:
                 raise GuardedReject("close does not exactly offset the open position (not risk-reducing)")
         if i.purpose == "open":
-            if len(open_now) >= rules.sizing.max_open_positions:
+            held_keys = {name_key(n) for n in open_underlyings(open_now)}
+            if name_key(i.underlying) in held_keys:
+                raise GuardedReject(f"already have an open risk reversal on {i.underlying}")
+            cap = rules.sizing.max_open_positions
+            if cap is not None and len(open_now) >= cap:
                 raise GuardedReject("max open positions reached")
-            if i.max_loss_usd is None or i.max_loss_usd > rules.sizing.max_loss_usd:
-                raise GuardedReject("max loss over cap")
         elif not any(p["position_id"] == i.position_id for p in open_now):
             raise GuardedReject("close for a position that is not open")
 
@@ -358,11 +524,11 @@ def _execute(cid, intent: ComboIntent, mode, broker, lineage: Lineage, rules, na
     except IdentityError as exc:
         lineage.update_order(intent.idempotency_key, status="rejected")
         lineage.latch_kill(name, mode, f"identity at send: {exc}")
-        return finish("error", [f"identity_failure_at_send: {exc}"])
+        return "error", [f"identity_failure_at_send: {exc}"]
     except GuardedReject as exc:
         lineage.update_order(intent.idempotency_key, status="not_sent")
         lineage.record(cid, "order", {"sent": False, "reason": str(exc)})
-        return finish("proposed_not_sent", [f"not sent: {exc}"])
+        return "proposed_not_sent", [f"not sent: {exc}"]
 
     oid = placed.get("broker_order_id")
     lineage.update_order(intent.idempotency_key, status="submitted", broker_order_id=oid)
@@ -392,10 +558,10 @@ def _execute(cid, intent: ComboIntent, mode, broker, lineage: Lineage, rules, na
         price = st.get("avg_fill_price")
         price = intent.limit_price if price is None else float(price)
         if intent.purpose == "open":
-            lineage.open_position(position_id=f"p-{cid}", strategy=name, mode=mode, cycle_id=cid,
+            lineage.open_position(position_id=f"p-{cid}-{intent.underlying}", strategy=name, mode=mode, cycle_id=cid,
                                   legs=[l.model_dump(mode="json") for l in intent.legs], entry_price=price,
                                   quantity=intent.quantity, max_loss_usd=intent.max_loss_usd)
-            outcome, reasons = "entered", [f"filled {intent.action} combo @ {price:+.2f}"]
+            outcome, reasons = "entered", [f"filled {intent.action} {intent.underlying} combo @ {price:+.2f}"]
         else:
             pnl = lineage.close_position(intent.position_id, cycle_id=cid, exit_price=price, trigger=trigger or "")
             pos = lineage.get_position(intent.position_id)
@@ -414,14 +580,14 @@ def _execute(cid, intent: ComboIntent, mode, broker, lineage: Lineage, rules, na
         lineage.update_order(intent.idempotency_key, status="cancelled")
         outcome, reasons = "abstained", [f"order {oid} not filled at limit {intent.limit_price:+.2f}; cancelled"]
 
-    rec = reconcile(broker, lineage, strategy=name, mode=mode, underlying=rules.underlying,
+    rec = reconcile(broker, lineage, strategy=name, mode=mode, underlying=None,
                     cycle_id=cid, account_id=account_id)
     if not rec["ok"] and hasattr(broker, "settle"):
-        broker.settle()  # IB position updates can lag a fill by a moment; retry once
-        rec = reconcile(broker, lineage, strategy=name, mode=mode, underlying=rules.underlying,
+        broker.settle()
+        rec = reconcile(broker, lineage, strategy=name, mode=mode, underlying=None,
                         cycle_id=cid, account_id=account_id)
     lineage.record(cid, "reconcile", {"phase": "post", **rec})
     if not rec["ok"]:
         lineage.latch_kill(name, mode, "post-trade reconcile drift: " + "; ".join(rec["drift"])[:500])
         reasons = reasons + ["post_reconcile_drift"] + rec["drift"]
-    return finish(outcome, reasons)
+    return outcome, reasons

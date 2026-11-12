@@ -189,17 +189,20 @@ class CboeMarketState:
             raise VendorError(f"http_{r.status_code} {url.split('://', 1)[-1][:80]}: {r.text[:200]}")
         return r
 
-    def snapshot(self, rules: DeterministicRules, *, held_legs: list[dict[str, Any]]) -> MarketSnapshot:
+    def snapshot(self, rules: DeterministicRules, *, held_legs: list[dict[str, Any]],
+                 underlying: str | None = None) -> MarketSnapshot:
+        und = (underlying or rules.underlying or "").strip().upper()
         try:
-            return self._snapshot(rules, held_legs)
+            return self._snapshot(rules, held_legs, und)
         except VendorError as exc:
-            return unavailable(rules.underlying, self.source, f"cboe_error: {exc}")
+            return unavailable(und or "?", self.source, f"cboe_error: {exc}")
         except Exception as exc:
             log.warning("CBOE snapshot failed: %s", exc)
-            return unavailable(rules.underlying, self.source, f"cboe_exception: {type(exc).__name__}: {exc}")
+            return unavailable(und or "?", self.source, f"cboe_exception: {type(exc).__name__}: {exc}")
 
-    def _snapshot(self, rules: DeterministicRules, held_legs: list[dict[str, Any]]) -> MarketSnapshot:
-        und = rules.underlying
+    def _snapshot(self, rules: DeterministicRules, held_legs: list[dict[str, Any]], und: str) -> MarketSnapshot:
+        if not und:
+            return unavailable("?", self.source, "no_underlying")
         today = self._today or datetime.now(ET).date()
         now = self._now()
         if now.tzinfo is None:
@@ -260,7 +263,8 @@ class CboeMarketState:
         held_quotes = {occ: quotes[occ] for occ in held_occ if occ in quotes}
 
         snap = assemble(rules=rules, source=self.source, price=price, closes=closes, expiry=expiry,
-                        chain=chain, quotes=quotes, held_quotes=held_quotes, as_of=as_of)
+                        chain=chain, quotes=quotes, held_quotes=held_quotes, as_of=as_of,
+                        underlying=und)
         if not any(o.delta is not None and o.mid is not None for o in snap.options):
             return unavailable(und, self.source, "no_option_greeks_or_bid_ask", [], as_of)
         return snap
@@ -309,6 +313,6 @@ def probe_line(snap: MarketSnapshot) -> str:
 if __name__ == "__main__":
     from core.strategy_loader import load
 
-    rules = load("strategies/active/spy-defined-risk-rr.yaml").rules
-    snap = CboeMarketState().snapshot(rules, held_legs=[])
+    rules = load("strategies/active/us-large-cap-rr.yaml").rules
+    snap = CboeMarketState().snapshot(rules, held_legs=[], underlying="SPY")
     print(probe_line(snap))

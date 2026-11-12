@@ -22,8 +22,8 @@ class ExecutionBroker(Protocol):
     def wait(self, broker_order_id: str, seconds: int) -> dict[str, Any]: ...
     def cancel(self, broker_order_id: str) -> dict[str, Any]: ...
     def status(self, broker_order_id: str) -> dict[str, Any] | None: ...
-    def option_positions(self, underlying: str) -> dict[str, float]: ...
-    def open_order_ids(self, underlying: str) -> set[str]: ...
+    def option_positions(self, underlying: str | None = None) -> dict[str, float]: ...
+    def open_order_ids(self, underlying: str | None = None) -> set[str]: ...
     def executions(self) -> list[dict[str, Any]]: ...
 
 
@@ -72,24 +72,34 @@ class IBExecution:
     def settle(self) -> None:
         self._sleep(3.0)
 
-    def option_positions(self, underlying: str) -> dict[str, float]:
+    def option_positions(self, underlying: str | None = None) -> dict[str, float]:
         from integrations.ibkr.occ import format_occ_symbol
 
         want = (self._account_id or "").upper()
+        root = (underlying or "").strip().upper()
         out: dict[str, float] = {}
         for pos in self.ib.positions():
             acct = getattr(pos, "account", None)
             if want and acct and str(acct).strip().upper() != want:
                 continue
             c = pos.contract
-            if (c.secType or "").upper() != "OPT" or c.symbol != underlying:
+            if (c.secType or "").upper() != "OPT":
+                continue
+            if root and str(c.symbol or "").upper() != root:
                 continue
             occ = format_occ_symbol(c.symbol, c.lastTradeDateOrContractMonth, c.right, c.strike)
             out[occ] = out.get(occ, 0.0) + float(pos.position)
         return {k: v for k, v in out.items() if v != 0}
 
-    def open_order_ids(self, underlying: str) -> set[str]:
-        return {str(t.order.orderId) for t in self.ib.openTrades() if t.contract.symbol == underlying}
+    def open_order_ids(self, underlying: str | None = None) -> set[str]:
+        root = (underlying or "").strip().upper()
+        out = set()
+        for t in self.ib.openTrades():
+            sym = str(getattr(t.contract, "symbol", "") or "").upper()
+            if root and sym != root:
+                continue
+            out.add(str(t.order.orderId))
+        return out
 
     def executions(self) -> list[dict[str, Any]]:
         from integrations.ibkr.orders import fill_to_record
@@ -142,10 +152,18 @@ class SimBroker:
             rec["status"] = "Cancelled"
         return self.status(broker_order_id)
 
-    def option_positions(self, underlying: str) -> dict[str, float]:
-        return {k: v for k, v in self._positions.items() if k.startswith(underlying)}
+    def option_positions(self, underlying: str | None = None) -> dict[str, float]:
+        from core.universe import occ_root
+        root = (underlying or "").strip().upper()
+        out = {}
+        for k, v in self._positions.items():
+            if root and occ_root(k).upper() != root:
+                continue
+            out[k] = v
+        return out
 
-    def open_order_ids(self, underlying: str) -> set[str]:
+    def open_order_ids(self, underlying: str | None = None) -> set[str]:
+        del underlying
         return {oid for oid, r in self._orders.items() if r["status"] not in ("Filled", "Cancelled")}
 
     def executions(self) -> list[dict[str, Any]]:

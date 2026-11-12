@@ -1,6 +1,7 @@
-"""Pure liquidity screen: pick 25-delta put/call + wings, pass/fail vs thresholds.
+"""Pure liquidity screen: pick 25-delta put/call, plus wings only when configured.
 
 No IB, no clock I/O except the `now` argument. Golden-fixture tests call this.
+In-force standard RR has no wing; historical defined-risk YAML still screens wings.
 """
 
 from __future__ import annotations
@@ -180,9 +181,6 @@ def screen_chain(chain: QuotedChain, thresholds: ScreenThresholds) -> TickerScre
     window = [l for l in chain.legs if l.expiry == expiry] if expiry else []
     put25 = nearest_abs_delta(window, "P", thresholds.target_abs_delta)
     call25 = nearest_abs_delta(window, "C", thresholds.target_abs_delta)
-    p_wing = put_wing(window, put25.strike, thresholds.wing_width) if put25 else None
-    c_wing = call_wing(window, call25.strike, thresholds.wing_width) if call25 else None
-
     reports = [
         evaluate_leg(
             "put_25d", put25, thresholds, now=now,
@@ -192,15 +190,20 @@ def screen_chain(chain: QuotedChain, thresholds: ScreenThresholds) -> TickerScre
             "call_25d", call25, thresholds, now=now,
             missing_reason="missing_greeks" if expiry else "no_expiry_in_dte_window",
         ),
-        evaluate_leg(
-            "put_wing", p_wing, thresholds, now=now,
-            missing_reason="missing_wing_strike" if put25 else "missing_greeks",
-        ),
-        evaluate_leg(
-            "call_wing", c_wing, thresholds, now=now,
-            missing_reason="missing_wing_strike" if call25 else "missing_greeks",
-        ),
     ]
+    if thresholds.wing_width is not None:
+        p_wing = put_wing(window, put25.strike, thresholds.wing_width) if put25 else None
+        c_wing = call_wing(window, call25.strike, thresholds.wing_width) if call25 else None
+        reports.extend([
+            evaluate_leg(
+                "put_wing", p_wing, thresholds, now=now,
+                missing_reason="missing_wing_strike" if put25 else "missing_greeks",
+            ),
+            evaluate_leg(
+                "call_wing", c_wing, thresholds, now=now,
+                missing_reason="missing_wing_strike" if call25 else "missing_greeks",
+            ),
+        ])
     for r in reports:
         reasons.extend(f"{r.role}: {x}" for x in r.reasons)
         if not r.found:

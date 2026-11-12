@@ -75,7 +75,7 @@ def grid(contracts: list[Contract], expiry: str, price: float, step: float) -> l
 
 def assemble(*, rules: DeterministicRules, source: str, price: float, closes: list[float], expiry: str,
              chain: list[Contract], quotes: dict[str, Quote], held_quotes: dict[str, Quote] | None = None,
-             as_of: str | None = None) -> MarketSnapshot:
+             as_of: str | None = None, underlying: str | None = None) -> MarketSnapshot:
     options = []
     for c in chain:
         q = quotes.get(c.occ)
@@ -89,6 +89,6 @@ def assemble(*, rules: DeterministicRules, source: str, price: float, closes: li
     held = {k: v.mid for k, v in (held_quotes or {}).items() if v.mid is not None}
     return MarketSnapshot(
         as_of=as_of or datetime.now(timezone.utc).isoformat(timespec="seconds"), source=source,
-        underlying=rules.underlying, status="ok", underlying_price=float(price), daily_closes=closes,
+        underlying=underlying or rules.underlying or "", status="ok", underlying_price=float(price), daily_closes=closes,
         expiry=expiry, options=options, held_marks=held,
     )

@@ -4,7 +4,7 @@ Harness only. No strategy YAML.
 
 Paper account in force for tests: **DUT116016** (Gateway **4002**). Product-in-force
 close is `core.cli flatten` (still through GuardedBroker + this identity gate).
-YAML yellow-zone auto-exits are superseded intent:
+Product close is `core.cli flatten`. No automated yellow-zone exits:
 [`exit-strategy.md`](exit-strategy.md). Mask live account ids as `U****8141`.
 
 ## Paper readiness (no orders)

@@ -1,11 +1,11 @@
-"""Thin deterministic entry signals for the as-built defined-risk RR YAML.
+"""Thin deterministic entry signals for the in-force standard RR.
 
 Inputs: one MarketSnapshot (+ own rr25 history). No I/O, no clock reads.
-Defined-risk structure is superseded product intent (standard RR; see
-knowledge/ops/exit-strategy.md). Signal math here is unchanged.
+Binding signal: rr25 <= max_rr25. Other metrics may be computed for lineage
+but are not required unless the YAML flags them.
 Convention: rr25 = IV(25d call) - IV(25d put); equities are usually negative.
-25-delta IVs (rr25, put/call IV ratio) are linearly interpolated in |delta|
-between the strikes that bracket 0.25; nearest listed strike if not bracketable.
+25-delta IVs are linearly interpolated in |delta| between the strikes that
+bracket 0.25; nearest listed strike if not bracketable.
 """
 
 from __future__ import annotations
@@ -123,16 +123,18 @@ def compute_signals(
             note=f"call {call25.describe()}; put {put25.describe()}",
         ))
         ratio = put25.iv / call25.iv
+        pcr_req = bool(sig.require_put_call_iv_ratio)
         out.append(SignalValue(
             name="put_call_iv_ratio", value=round(ratio, 6), threshold=sig.min_put_call_iv_ratio,
-            passed=ratio >= sig.min_put_call_iv_ratio,
+            passed=ratio >= sig.min_put_call_iv_ratio, required=pcr_req,
             note=f"put_iv={put25.iv:.6f} / call_iv={call25.iv:.6f}",
         ))
     else:
         out.append(SignalValue(name="rr25", value=None, threshold=sig.max_rr25, passed=False,
                                note="no usable 25d call/put (delta/iv/bid-ask missing)"))
         out.append(SignalValue(name="put_call_iv_ratio", value=None,
-                               threshold=sig.min_put_call_iv_ratio, passed=False, note="no 25d legs"))
+                               threshold=sig.min_put_call_iv_ratio, passed=False,
+                               required=bool(sig.require_put_call_iv_ratio), note="no 25d legs"))
 
     atm_c = nearest_delta(rows, "C", 0.5)
     atm_p = nearest_delta(rows, "P", 0.5)
@@ -174,6 +176,7 @@ def compute_signals(
     ]
     out.append(SignalValue(
         name="event_blackout", value=float(len(blocking)), threshold=0.0, passed=not blocking,
+        required=bool(sig.require_event_blackout),
         note=("blocked by " + ",".join(blocking)) if blocking else None,
     ))
     return out

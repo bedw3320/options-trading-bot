@@ -326,6 +326,31 @@ class Lineage:
             ).fetchone()
         return float(row["s"])
 
+    def has_reconciled_paper_fill(self) -> bool:
+        """True if SQLite already has at least one paper fill (auto-send bootstrap)."""
+        with self._conn() as c:
+            row = c.execute("SELECT 1 FROM fills WHERE mode='paper' LIMIT 1").fetchone()
+        return row is not None
+
+    def clear_open_positions(self, mode: str, *, strategy: str | None = None) -> int:
+        """Clear live open-position snapshot only. Never deletes history.
+
+        Default: every open row for `mode` (including a superseded strategy name
+        after a YAML rename). Pass strategy= to limit the delete.
+        """
+        with self._conn() as c:
+            if strategy:
+                cur = c.execute(
+                    "DELETE FROM strategy_positions WHERE strategy=? AND mode=? AND status='open'",
+                    (strategy, mode),
+                )
+            else:
+                cur = c.execute(
+                    "DELETE FROM strategy_positions WHERE mode=? AND status='open'",
+                    (mode,),
+                )
+            return int(cur.rowcount)
+
     def entries_since(self, strategy: str, mode: str, since_iso: str) -> int:
         with self._conn() as c:
             row = c.execute(

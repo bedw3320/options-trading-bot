@@ -76,19 +76,22 @@ class AlpacaMarketState:
         return out
 
     # -- provider -----------------------------------------------------------
-    def snapshot(self, rules: DeterministicRules, *, held_legs: list[dict[str, Any]]) -> MarketSnapshot:
+    def snapshot(self, rules: DeterministicRules, *, held_legs: list[dict[str, Any]],
+                 underlying: str | None = None) -> MarketSnapshot:
+        und = (underlying or rules.underlying or "").strip().upper()
         if not (self.key_id and self.secret):
-            return unavailable(rules.underlying, self.source, "alpaca_credentials_missing")
+            return unavailable(und or "?", self.source, "alpaca_credentials_missing")
         try:
-            return self._snapshot(rules, held_legs)
+            return self._snapshot(rules, held_legs, und)
         except VendorError as exc:
-            return unavailable(rules.underlying, self.source, f"alpaca_error: {exc}")
+            return unavailable(und or "?", self.source, f"alpaca_error: {exc}")
         except Exception as exc:
             log.warning("Alpaca snapshot failed: %s", exc)
-            return unavailable(rules.underlying, self.source, f"alpaca_exception: {type(exc).__name__}: {exc}")
+            return unavailable(und or "?", self.source, f"alpaca_exception: {type(exc).__name__}: {exc}")
 
-    def _snapshot(self, rules: DeterministicRules, held_legs: list[dict[str, Any]]) -> MarketSnapshot:
-        und = rules.underlying
+    def _snapshot(self, rules: DeterministicRules, held_legs: list[dict[str, Any]], und: str) -> MarketSnapshot:
+        if not und:
+            return unavailable("?", self.source, "no_underlying")
         today = self._today or datetime.now(ET).date()
         as_of = self._now().isoformat(timespec="seconds")
 
@@ -131,7 +134,8 @@ class AlpacaMarketState:
             held = {sym: _quote(s) for sym, s in hs.items()}
 
         snap = assemble(rules=rules, source=self.source, price=price, closes=closes, expiry=expiry,
-                        chain=chain, quotes=quotes, held_quotes=held, as_of=as_of)
+                        chain=chain, quotes=quotes, held_quotes=held, as_of=as_of,
+                        underlying=und)
         if not any(o.delta is not None and o.mid is not None for o in snap.options):
             return unavailable(und, self.source, "no_option_greeks_or_bid_ask", [], as_of)
         return snap

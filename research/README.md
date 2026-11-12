@@ -6,8 +6,8 @@ on new names. Paper only. The LLM proposes; code decides.
 
 The runner still does **not** read `strategies/watchlist.yaml` (Epic 5 — do not
 start it). This folder is observational: schema, CI lint, a liquidity screen,
-and a daily skew snapshot. It does **not** mean the product universe is SPY-only;
-SPY is the as-built paper baseline file the cycle still loads.
+and a daily skew snapshot. The cycle loads `strategies/active/us-large-cap-rr.yaml`
+(US large caps), not this watchlist and not the superseded SPY YAML.
 
 Product-in-force (locked 2026-11-11): standard RR, no protective put, no defined
 max loss, no automated exits, manual flatten only. See
@@ -25,10 +25,11 @@ live product policy.
    Pre-register `forecast_horizon` + `registered_at` (and `probability` when a
    human writes one — do not invent) **before** looking at outcomes.
 3. **Code liquidity screen** — `python -m research.screen` against IB Gateway
-   paper **4002**. Finds the ~25-delta put and call at 30–45 DTE plus the put/call
-   wings (`wing_width` from the SPY strategy YAML). Reports OI, volume, bid/ask
-   spread (abs and % of mid), quote age, and `data_source`. Delayed data is
-   labelled and marked `diagnostic_only`.
+   paper **4002**. Finds the ~25-delta put and call at 30–45 DTE. Wings are
+   screened only when the loaded strategy still has `wing_width` (historical
+   defined-risk YAML). Reports OI, volume, bid/ask spread (abs and % of mid),
+   quote age, and `data_source`. Delayed data is labelled and marked
+   `diagnostic_only`.
 4. **Pre-registered thesis + falsifier → `record_only`** — a tripped or expired
    falsifier means no new entries (`schemas.watchlist.falsifier_blocks_new_entries`).
    Thesis direction and skew direction must agree before a name can be active
@@ -43,9 +44,8 @@ live product policy.
 ## Thresholds — PROPOSALS for Will
 
 Liquidity numbers are **not** re-stated in strategy YAML. The screen reads them
-from the as-built file `strategies/active/spy-defined-risk-rr.yaml`
-`rules.structure` (defined-risk YAML; superseded as product, still the
-threshold source until a later strategy PR):
+from the in-force file `strategies/active/us-large-cap-rr.yaml`
+`rules.structure`:
 
 | Field | Current YAML | Note |
 |---|---|---|
@@ -122,9 +122,8 @@ Weekday 15:50 ET. Force: `bash deploy/skew-snapshot.sh --force`.
 
 ## Current watchlist (v0)
 
-- **SPY** — `active` / bullish / index baseline. As-built paper YAML the cycle
-  still loads (`spy-defined-risk-rr.yaml`); not a claim that the product
-  universe is SPY-only. `approved_by: will`. No issuer falsifier (TODO; do not invent).
+- **SPY** — `active` / bullish / index baseline on the watchlist only. The cycle
+  does not load this file. `approved_by: will`. No issuer falsifier (TODO; do not invent).
 - **CRWV** — `record_only` / bearish / theme `ai-neocloud-financing`. One of
   three candidate slots. Two slots empty until Will writes theses with sources.
 

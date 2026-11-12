@@ -29,7 +29,10 @@ QUOTE_BATCH = 40
 
 
 class MarketStateProvider(Protocol):
-    def snapshot(self, rules: DeterministicRules, *, held_legs: list[dict[str, Any]]) -> MarketSnapshot: ...
+    def snapshot(
+        self, rules: DeterministicRules, *, held_legs: list[dict[str, Any]],
+        underlying: str | None = None,
+    ) -> MarketSnapshot: ...
 
 
 def unavailable(underlying: str, source: str, reason: str, errors: list[dict] | None = None,
@@ -47,14 +50,28 @@ class FixtureMarketState:
         self.path = Path(path)
         self.overrides = overrides or {}
 
-    def snapshot(self, rules: DeterministicRules, *, held_legs: list[dict[str, Any]]) -> MarketSnapshot:
+    def listed_underlyings(self) -> list[str]:
         try:
             raw = json.loads(self.path.read_text())
             raw.update(self.overrides)
+            und = str(raw.get("underlying") or "").strip().upper()
+            return [und] if und else []
+        except Exception:
+            return []
+
+    def snapshot(self, rules: DeterministicRules, *, held_legs: list[dict[str, Any]],
+                 underlying: str | None = None) -> MarketSnapshot:
+        want = (underlying or rules.underlying or "").strip().upper()
+        try:
+            raw = json.loads(self.path.read_text())
             raw["source"] = f"fixture:{self.path.name}"
+            raw.update(self.overrides)
             snap = MarketSnapshot.model_validate(raw)
         except Exception as exc:  # fixture errors are data errors too
-            return unavailable(rules.underlying, f"fixture:{self.path.name}", f"fixture_error: {exc}")
+            return unavailable(want or "?", f"fixture:{self.path.name}", f"fixture_error: {exc}")
+        got = (snap.underlying or "").strip().upper()
+        if want and got and want != got:
+            return unavailable(want, f"fixture:{self.path.name}", f"fixture_no_such_underlying:{want}")
         if snap.status == "ok" and held_legs and not snap.held_marks:
             by_occ = {o.occ: o.mid for o in snap.options if o.mid is not None}
             snap.held_marks = {l["occ"]: by_occ[l["occ"]] for l in held_legs if l["occ"] in by_occ}
@@ -68,25 +85,32 @@ class IBMarketState:
         self.ib = ib
         self.quote_timeout = quote_timeout
 
-    def snapshot(self, rules: DeterministicRules, *, held_legs: list[dict[str, Any]]) -> MarketSnapshot:
-        und = rules.underlying
+    def snapshot(self, rules: DeterministicRules, *, held_legs: list[dict[str, Any]],
+                 underlying: str | None = None) -> MarketSnapshot:
+        und = (underlying or rules.underlying or "").strip().upper()
         try:
-            return self._snapshot(rules, held_legs)
+            return self._snapshot(rules, held_legs, und)
         except Exception as exc:
             log.warning("IB snapshot failed: %s", exc)
-            return unavailable(und, "ib", f"ib_exception: {type(exc).__name__}: {exc}")
+            return unavailable(und or "?", "ib", f"ib_exception: {type(exc).__name__}: {exc}")
 
-    def _snapshot(self, rules: DeterministicRules, held_legs: list[dict[str, Any]]) -> MarketSnapshot:
+    def _snapshot(self, rules: DeterministicRules, held_legs: list[dict[str, Any]], und: str) -> MarketSnapshot:
         from ib_insync import Stock
 
         from integrations.ibkr.market_data import get_stock_bars
         from integrations.ibkr.occ import make_option
-        from integrations.ibkr.option_quotes import request_quote, request_quotes
+        from integrations.ibkr.option_quotes import (
+            is_delayed_market_data,
+            is_non_live_market_data,
+            request_quote,
+            request_quotes,
+        )
         from integrations.ibkr.options_data import get_option_contracts
 
         ib = self.ib
-        und = rules.underlying
         s = rules.structure
+        if not und:
+            return unavailable("?", "ib", "no_underlying")
         as_of = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
         stock = Stock(und, "SMART", "USD")
@@ -156,10 +180,49 @@ class IBMarketState:
         held_marks = {qq.symbol: qq.mid for qq in quotes[len(contracts):] if qq.mid is not None}
         if not any(o.delta is not None and o.mid is not None for o in options):
             return unavailable(und, "ib", "no_option_greeks_or_bid_ask", [], as_of)
+        mdts = [qq.market_data_type for qq in quotes if qq.market_data_type is not None]
+        source = "ib"
+        if any(is_delayed_market_data(m) for m in mdts):
+            source = "ib_delayed"
+        elif any(is_non_live_market_data(m) for m in mdts):
+            source = "ib_frozen"
         return MarketSnapshot(
-            as_of=as_of, source="ib", underlying=und, status="ok", underlying_price=float(price),
+            as_of=as_of, source=source, underlying=und, status="ok", underlying_price=float(price),
             daily_closes=closes, expiry=expiry, options=options, held_marks=held_marks,
         )
+
+
+class DictMarketState:
+    """In-memory snapshots keyed by underlying (tests / multi-name dry-run)."""
+
+    def __init__(self, snapshots: dict[str, MarketSnapshot | dict[str, Any] | Path | str]) -> None:
+        self._raw = {str(k).strip().upper(): v for k, v in snapshots.items()}
+
+    def listed_underlyings(self) -> list[str]:
+        return list(self._raw)
+
+    def snapshot(self, rules: DeterministicRules, *, held_legs: list[dict[str, Any]],
+                 underlying: str | None = None) -> MarketSnapshot:
+        want = (underlying or rules.underlying or "").strip().upper()
+        blob = self._raw.get(want)
+        if blob is None:
+            return unavailable(want or "?", "fixture:dict", f"fixture_no_such_underlying:{want}")
+        try:
+            if isinstance(blob, MarketSnapshot):
+                snap = blob
+            elif isinstance(blob, (str, Path)):
+                snap = FixtureMarketState(blob).snapshot(rules, held_legs=held_legs, underlying=want)
+            else:
+                raw = dict(blob)
+                raw.setdefault("source", "fixture:dict")
+                raw.setdefault("underlying", want)
+                snap = MarketSnapshot.model_validate(raw)
+        except Exception as exc:
+            return unavailable(want or "?", "fixture:dict", f"fixture_error: {exc}")
+        if snap.status == "ok" and held_legs and not snap.held_marks:
+            by_occ = {o.occ: o.mid for o in snap.options if o.mid is not None}
+            snap.held_marks = {l["occ"]: by_occ[l["occ"]] for l in held_legs if l["occ"] in by_occ}
+        return snap
 
 
 # --- pluggable source -------------------------------------------------------

@@ -1,8 +1,12 @@
+# SUPERSEDED / HISTORICAL — not loaded by the runner.
+# Product-in-force is strategies/active/us-large-cap-rr.yaml (standard RR,
+# locked 2026-11-11). This file is kept so lineage of past cycles can still
+# name the YAML they ran. Do not treat these yellow-zone exits as current policy.
+#
 # SPY defined-risk risk reversal, v0 (paper only).
 # Source: knowledge/archive/research_v0_ Options Risk Reversal Strategy.md and
 # knowledge/ops/burry-options-expert-brief.md. US/SPY parameters only; EM is out of v0.
-# The `rules:` block is what executes (core/cycle.py, deterministic, no LLM).
-# entry/exit `conditions` below are the human-readable mirror of those rules.
+# entry/exit `conditions` below are the human-readable mirror of those (superseded) rules.
 name: spy-defined-risk-rr
 version: "0.1.0"
 description: >

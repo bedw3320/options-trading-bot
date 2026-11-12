@@ -1,16 +1,8 @@
-# Research-screen config. ALL THRESHOLDS ARE PROPOSALS FOR WILL.
-#
-# Liquidity numbers are omitted on purpose: they default to the as-built
-# strategies/active/spy-defined-risk-rr.yaml rules.structure
-# (min_open_interest: 500, max_spread_pct_of_mid: 10, dte 30-45, wing_width 20).
-# That YAML is defined-risk / superseded as product-in-force (locked 2026-11-11:
-# standard RR, no protective put). Do not edit the strategy YAML from this
-# pipeline. See knowledge/ops/exit-strategy.md.
-#
-# wing_width: 20 is a SPY defined-risk dollar width. Applying it to single
-# names is a proposal, not an approved per-name structure.
+# Research-screen config. Liquidity numbers default to the in-force
+# strategies/active/us-large-cap-rr.yaml rules.structure (OI >= 500, spread
+# <= 10% of mid, 30-45 DTE, 25d put + 25d call). No wing unless overridden.
 
-strategy: strategies/active/spy-defined-risk-rr.yaml
+strategy: strategies/active/us-large-cap-rr.yaml
 # min_open_interest: 500
 # max_spread_pct_of_mid: 10
 # dte_min: 30

@@ -40,10 +40,11 @@ def test_thresholds_inherit_strategy_yaml_oi_and_spread():
     assert th.min_open_interest == 500
     assert th.max_spread_pct_of_mid == 10
     assert th.dte_min == 30 and th.dte_max == 45
-    assert th.wing_width == 20
+    assert th.wing_width is None
+    assert "us-large-cap-rr.yaml" in th.strategy_path
 
 
-def test_liquid_chain_passes_all_four_legs():
+def test_liquid_chain_passes_25d_legs():
     s = screen_chain(_chain("liquid_chain.json"), _th())
     assert s.result == "pass"
     assert s.diagnostic_only is False
@@ -52,30 +53,31 @@ def test_liquid_chain_passes_all_four_legs():
     by = _by_role(s)
     assert by["put_25d"].strike == 650 and by["put_25d"].passed
     assert by["call_25d"].strike == 690 and by["call_25d"].passed
-    assert by["put_wing"].strike == 630 and by["put_wing"].passed
-    assert by["call_wing"].strike == 710 and by["call_wing"].passed
+    assert "put_wing" not in by and "call_wing" not in by
     assert by["put_25d"].open_interest == 8000
     assert by["put_25d"].volume == 1200
     assert by["put_25d"].spread_abs == pytest.approx(0.2)
     assert by["put_25d"].data_source == "ib_live"
 
 
-def test_illiquid_wing_fails_oi():
-    s = screen_chain(_chain("illiquid_wing.json"), _th())
+def test_illiquid_or_missing_wing_does_not_fail_standard_rr():
+    assert screen_chain(_chain("illiquid_wing.json"), _th()).result == "pass"
+    s = screen_chain(_chain("missing_wing.json"), _th())
+    assert s.result == "pass"
+    assert "put_wing" not in _by_role(s)
+
+
+def test_historical_yaml_still_screens_wings():
+    th = load_thresholds(strategy_path="strategies/active/spy-defined-risk-rr.yaml")
+    assert th.wing_width == 20
+    s = screen_chain(_chain("illiquid_wing.json"), th)
     assert s.result == "fail"
     wing = _by_role(s)["put_wing"]
     assert wing.found and not wing.passed
     assert any("OI 50 < 500" in r for r in wing.reasons)
-
-
-def test_missing_wing_strike():
-    s = screen_chain(_chain("missing_wing.json"), _th())
-    assert s.result == "fail"
-    by = _by_role(s)
-    assert by["put_wing"].found is False
-    assert "missing_wing_strike" in by["put_wing"].reasons
-    assert by["call_wing"].found is False
-    assert "missing_wing_strike" in by["call_wing"].reasons
+    missing = screen_chain(_chain("missing_wing.json"), th)
+    assert missing.result == "fail"
+    assert _by_role(missing)["put_wing"].found is False
 
 
 def test_crossed_and_stale_quotes():

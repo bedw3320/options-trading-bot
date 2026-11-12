@@ -1,26 +1,31 @@
 # Exit strategy — deferred (locked 2026-11-11, America/Toronto)
 
 Locked with Will. Product intent for closes, assignment, and paper-reset
-durability. **Not implemented here.** The v0 open path must not wait on this
-epic. The new core-strategy YAML (standard risk reversal, no protective put)
-is a later change; this document does not rewrite
-`strategies/active/spy-defined-risk-rr.yaml`.
+durability. Assignment/sub-routines are **not** in the v0 open path.
 
 Walking-slice **Epic 6** in [`STATUS.md`](../../STATUS.md). That row is not
 ROADMAP Epic 6 (multi-agent desk).
 
+The in-force open path is `strategies/active/us-large-cap-rr.yaml` (standard
+risk reversal). `strategies/active/spy-defined-risk-rr.yaml` is superseded /
+historical and is not loaded by the runner.
+
 ## In force now
 
-- Structure target: standard risk reversal — **short put + long call**. No
-  protective put. No defined max loss.
+- Structure: standard risk reversal — **short put + long call**. No
+  protective put. No defined max loss. Same expiry, 30–45 DTE, 25-delta short
+  put and 25-delta long call, 1 lot.
+- Binding entry signal: **rr25 ≤ −0.05** (25d call IV minus 25d put IV).
 - Risk cap for the testing period: paper account **DUT116016** equity and
-  margin. That account is the bound.
+  margin. That account is the bound. No $1,500 daily-loss kill.
 - **No automated exits.** None of: 21-DTE time stop, underlying-price stop,
   dollar stop, take-profit.
 - Closes are **manual flatten only** (`core.cli flatten`, still through
-  GuardedBroker, paper identity, `--allow-trading` to send).
+  GuardedBroker, paper identity, `--allow-trading` to send) or hold to expiry.
 - Assignment and other sub-routines are designed later **in this epic**. They
   do not block opening.
+- Paper auto-send is still gated: live IBKR quotes on the paper account, and
+  one paper fill already reconciled into SQLite. Delayed data hard-shadows.
 
 ## Three core scenarios
 
@@ -35,29 +40,21 @@ ROADMAP Epic 6 (multi-agent desk).
 
 - Time stop, underlying stop, dollar stop, take-profit (the yellow zone).
 - Assignment handling and any other close/hold sub-routines.
-- A paper-reset tool or CLI. Record the rules below; do not implement them in
-  the epic-registration PR.
 
-## Superseded as-built (do not delete in this PR)
+## Historical YAML (do not load)
 
-Code and `strategies/active/spy-defined-risk-rr.yaml` still evaluate this
-`evaluate_exit` order (`core/rr_rules.py`). Treat it as superseded intent,
-not product-in-force:
+`strategies/active/spy-defined-risk-rr.yaml` still encodes the old defined-risk
+`evaluate_exit` order. Treat it as lineage of past cycles, not product-in-force:
 
 1. 21-DTE hard close
 2. Underlying stop: short put − 3%, floored at long put + 25% of the wing
 3. −$1,250 stop
 4. +$1,000 take profit
 
-Daily −$1,500 latches the kill switch and blocks new entries; it does **not**
-exit. That yellow zone is deferred into this epic. Leave the YAML exits in
-place until a later PR changes the core strategy.
+The runner refuses to execute that engine.
 
-As-built cycle behavior is still described in
+As-built cycle behavior is described in
 [`deterministic-cycle.md`](deterministic-cycle.md).
-If another doc still presents 21-DTE / underlying / dollar / take-profit as
-current product policy, it is stale — this file and
-[`STATUS.md`](../../STATUS.md) Epic 6 win.
 
 ## Decision-database durability (non-negotiable)
 
@@ -72,13 +69,16 @@ closed `strategy_positions`, `agent_events`). History stays queryable.
 After an IBKR flatten **and** a Client Portal paper equity reset:
 
 1. Record a **reset event** (append-only; do not rewrite history).
+   `core.cli paper-reset-snapshot --confirm yes` does this.
 2. Clear **only** the live open-position snapshot (`strategy_positions` rows
-   with `status=open`) so `core/reconcile.py` does not see expected option
-   legs that the broker no longer has and latch the kill switch
-   (`latch_on_reconcile_drift`).
+   with `status=open`, every strategy name for that mode) so `core/reconcile.py`
+   does not see expected option legs that the broker no longer has and latch
+   the kill switch (`latch_on_reconcile_drift`). Closed rows and decision
+   lineage stay.
 3. Do not rearm live. Paper remains the default.
+4. There is no tool that wipes the DB.
 
-## Paper reset facts (ops; no tool in this PR)
+## Paper reset facts (ops)
 
 IBKR paper reset does **not** close positions. Flatten first.
 
@@ -91,7 +91,7 @@ IBKR paper reset does **not** close positions. Flatten first.
 - Mask any live account id as `U****8141`. Never copy TWS secrets or `.env`
   values into git, issues, or this file.
 
-## Non-goals of the registration PR
+## Non-goals of Epic 6 (still)
 
-- No exit-logic changes, no `evaluate_exit` edits, no strategy YAML rewrite.
-- No paper-reset tool, no snapshot-clear command, no assignment handler.
+- No assignment handler.
+- Do not compact the Mini decision DB from this path.

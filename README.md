@@ -8,7 +8,7 @@ Paper first. Live only when you deliberately arm it.
 
 **Current status:** [`STATUS.md`](STATUS.md) — walking-slice epics 0–6 (update in every merged PR).
 
-**Product-in-force (locked 2026-11-11):** standard risk reversal (short put + long call), no protective put, no defined max loss, no automated exits. Closes are manual flatten only. Paper **DUT116016** equity/margin is the testing-period risk cap. Deferred exits: [`knowledge/ops/exit-strategy.md`](knowledge/ops/exit-strategy.md) (walking-slice Epic 6). The file `strategies/active/spy-defined-risk-rr.yaml` still encodes the old defined-risk yellow-zone exits — **superseded intent**, left in place until a later strategy PR.
+**Product-in-force (locked 2026-11-11):** standard risk reversal (short put + long call), no protective put, no defined max loss, no automated exits. Closes are manual flatten only. Paper **DUT116016** equity/margin is the testing-period risk cap. The runner loads [`strategies/active/us-large-cap-rr.yaml`](strategies/active/us-large-cap-rr.yaml). [`strategies/active/spy-defined-risk-rr.yaml`](strategies/active/spy-defined-risk-rr.yaml) is superseded/historical. Deferred assignment design: [`knowledge/ops/exit-strategy.md`](knowledge/ops/exit-strategy.md) (walking-slice Epic 6). Paper sends stay gated until live IBKR quotes on the paper account **and** one paper fill is reconciled into SQLite.
 
 **Delivery plan:** [`ROADMAP.md`](ROADMAP.md) — walking paper-trading slices through the options edge platform.
 
@@ -64,12 +64,11 @@ Without `--allow-trading`, the loop researches and journals. It does not send.
 
 ## Deterministic cycle (v0)
 
-`strategies/active/spy-defined-risk-rr.yaml` still runs through `core/cycle.py` with no LLM in the decision path
-(as-built: reconcile → snapshot → signals → decision → guarded BAG order → fill → reconcile, one `cycle_id`).
-That YAML is a **defined-risk** structure with yellow-zone `evaluate_exit` rules (21 DTE / underlying / −$1,250 / +$1,000).
-Those exits are **superseded product intent** — see [`knowledge/ops/exit-strategy.md`](knowledge/ops/exit-strategy.md).
-Product-in-force close is `core.cli flatten`. This is not a SPY-only product claim; it is the file the runner
-loads today. The watchlist is not wired.
+`strategies/active/us-large-cap-rr.yaml` runs through `core/cycle.py` with no LLM in the decision path
+(reconcile → snapshot → rr25 → 25d/25d construction → gated BAG order → fill → reconcile, one `cycle_id`).
+Structure is a **standard RR** (short 25-delta put + long 25-delta call, same expiry, 30–45 DTE, 1 lot).
+No automated exits — product close is `core.cli flatten` or hold to expiry.
+The watchlist is not wired. Paper auto-send still requires live IBKR data and one reconciled paper fill.
 
 ```bash
 uv run python -m core.cli run --dry-run      # full cycle on synthetic fixtures, no IB
@@ -124,7 +123,7 @@ Copy `.env.example` to `.env`:
 - **Identity gate** — `managedAccounts` must match `IB_ACCOUNT_ID`; live-looking `U*` or port 4001 aborts. See [`knowledge/ops/paper-readiness.md`](knowledge/ops/paper-readiness.md).
 - **Guarded placement** — runner preview → single-use token → risk revalidate → place. Agent `create_order` / `close_position` refuse to send.
 - **Live is not armed** — constraint 3 (autonomy latch) and stale-quote reject are not done. Idempotency keys and paper `flatten` exist. See `LOOP.md`.
-- **Product-in-force close** — `core.cli flatten` (GuardedBroker, paper identity, `--allow-trading` to send). YAML yellow-zone auto-exits are as-built / superseded ([`knowledge/ops/exit-strategy.md`](knowledge/ops/exit-strategy.md)).
+- **Product-in-force close** — `core.cli flatten` (GuardedBroker, paper identity, `--allow-trading` to send). No automated 21-DTE / underlying / dollar / take-profit stops ([`knowledge/ops/exit-strategy.md`](knowledge/ops/exit-strategy.md)).
 
 ## Commands
 

@@ -46,10 +46,12 @@ def mark_to_market(
     net = combo_mark(position, marks)
     pnl = None if net is None else round((net - entry) * 100.0 * qty, 2)
     limit = rules.kill_switch.daily_loss_limit_usd
+    from core.universe import position_underlying
+    und = position.get("underlying") or position_underlying(position) or snapshot.underlying
     return MarkToMarket(
         position_id=position["position_id"],
         opened_cycle_id=position.get("opened_cycle_id"),
-        underlying=rules.underlying,
+        underlying=und,
         underlying_price=snapshot.underlying_price,
         expiry=expiry,
         dte=days,
@@ -60,7 +62,7 @@ def mark_to_market(
         legs=row_marks,
         daily_realized_pnl_usd=daily_realized_pnl_usd,
         daily_loss_limit_usd=limit,
-        daily_loss_breach=daily_realized_pnl_usd <= -limit,
+        daily_loss_breach=bool(limit is not None and daily_realized_pnl_usd <= -limit),
     )
 
 

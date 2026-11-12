@@ -12,6 +12,7 @@ import pytest
 from core.brokers import SimBroker
 from core.cli import main as cli_main
 from core.cycle import run_cycle
+from core.entry_window import DRY_RUN_NOW
 from core.market_state import FixtureMarketState, make_provider
 from core.report import render, summarize
 from core.shadow import shadow_refusal, shadow_tag
@@ -23,11 +24,15 @@ from integrations.vendors.cboe import (
 from utils.lineage import Lineage
 
 ROOT = Path(__file__).resolve().parents[1]
-STRAT = ROOT / "strategies/active/spy-defined-risk-rr.yaml"
+STRAT = ROOT / "strategies/active/us-large-cap-rr.yaml"
 ENTRY = ROOT / "tests/fixtures/spy_snapshot_entry.json"
 FX = json.loads((ROOT / "tests/fixtures/cboe/cboe_spy.json").read_text())
 TODAY = date(2026, 10, 19)
-RTH_NOW = lambda: datetime(2026, 10, 19, 15, 0, tzinfo=timezone.utc)  # noqa: E731
+# CBOE fixture quotes are stamped 11:00 ET = 15:00 UTC; provider clock must match
+# or CBOE treats them as in the future. Cycle wall-clock is DRY_RUN_NOW (10:00 ET).
+QUOTE_NOW = lambda: datetime(2026, 10, 19, 15, 0, tzinfo=timezone.utc)  # noqa: E731
+SLOT_NOW = lambda: DRY_RUN_NOW  # noqa: E731
+NAME = "us-large-cap-rr"
 
 
 def transport(calls: list, *, status: int = 200, options=None, bars=None, stale: bool = False):
@@ -54,10 +59,22 @@ def transport(calls: list, *, status: int = 200, options=None, bars=None, stale:
     return httpx.MockTransport(handler)
 
 
+class BoundProvider:
+    def __init__(self, inner, tickers=("SPY",)):
+        self._inner = inner
+        self._tickers = list(tickers)
+
+    def listed_underlyings(self):
+        return self._tickers
+
+    def snapshot(self, rules, *, held_legs, underlying=None):
+        return self._inner.snapshot(rules, held_legs=held_legs, underlying=underlying or "SPY")
+
+
 def provider(calls, **kw):
     extras = {k: kw[k] for k in ("status", "options", "bars", "stale") if k in kw}
     return CboeMarketState(
-        today=TODAY, now=RTH_NOW,
+        today=TODAY, now=QUOTE_NOW,
         client=httpx.Client(transport=transport(calls, **extras)),
     )
 
@@ -83,8 +100,8 @@ def test_parse_cboe_ts_naive_is_et():
 
 def test_snapshot_matches_recorded_fixture(rules):
     calls: list = []
-    snap = provider(calls).snapshot(rules, held_legs=[])
-    ref = FixtureMarketState(ENTRY).snapshot(rules, held_legs=[])
+    snap = provider(calls).snapshot(rules, held_legs=[], underlying="SPY")
+    ref = FixtureMarketState(ENTRY).snapshot(rules, held_legs=[], underlying="SPY")
     assert snap.status == "ok", snap.reason
     assert snap.source == "cboe_delayed"
     assert snap.expiry == ref.expiry and snap.underlying_price == ref.underlying_price
@@ -101,7 +118,7 @@ def test_snapshot_matches_recorded_fixture(rules):
 
 
 def test_stale_quotes_unavailable(rules):
-    snap = provider([], stale=True).snapshot(rules, held_legs=[])
+    snap = provider([], stale=True).snapshot(rules, held_legs=[], underlying="SPY")
     assert snap.status == "unavailable" and snap.reason.startswith("cboe_stale_quotes")
 
 
@@ -110,12 +127,12 @@ def test_missing_iv_is_not_filled_in(rules):
     for o in body["data"]["options"]:
         o.pop("iv", None)
         o["delta"] = None
-    snap = provider([], options=body).snapshot(rules, held_legs=[])
+    snap = provider([], options=body).snapshot(rules, held_legs=[], underlying="SPY")
     assert snap.status == "unavailable" and snap.reason == "no_option_greeks_or_bid_ask"
 
 
 def test_http_error_is_unavailable(rules):
-    snap = provider([], status=403).snapshot(rules, held_legs=[])
+    snap = provider([], status=403).snapshot(rules, held_legs=[], underlying="SPY")
     assert snap.status == "unavailable" and snap.reason.startswith("cboe_error: http_403")
 
 
@@ -123,20 +140,21 @@ def test_missing_timestamp_unavailable(rules):
     body = json.loads(json.dumps(FX["options"]))
     body.pop("timestamp", None)
     body["data"].pop("last_trade_time", None)
-    snap = provider([], options=body).snapshot(rules, held_legs=[])
+    snap = provider([], options=body).snapshot(rules, held_legs=[], underlying="SPY")
     assert snap.status == "unavailable" and snap.reason == "cboe_timestamp_missing"
 
 
 def test_short_bars_unavailable(rules):
     snap = provider([], bars="Date,Open,High,Low,Close,Volume\n2026-10-16,1,1,1,1,1\n").snapshot(
-        rules, held_legs=[])
+        rules, held_legs=[], underlying="SPY")
     assert snap.status == "unavailable" and snap.reason.startswith("historical_bars_unavailable")
 
 
 def test_held_legs_marked(rules):
     occ = "SPY261120P00700000"
     snap = provider([]).snapshot(
-        rules, held_legs=[{"occ": occ, "expiry": "20261120", "strike": 700.0, "right": "P"}])
+        rules, held_legs=[{"occ": occ, "expiry": "20261120", "strike": 700.0, "right": "P"}],
+        underlying="SPY")
     assert occ in snap.held_marks and snap.held_marks[occ] > 0
 
 
@@ -154,8 +172,8 @@ class ExplodingBroker(SimBroker):
 def test_cboe_source_cannot_place_even_with_allow_trading(rules, tmp_path):
     lin = Lineage(str(tmp_path / "s.db"))
     res = run_cycle(
-        STRAT, mode="dry_run", provider=provider([]), broker=ExplodingBroker(),
-        lineage=lin, allow_trading=True, now=RTH_NOW, data_source="cboe",
+        STRAT, mode="dry_run", provider=BoundProvider(provider([])), broker=ExplodingBroker(),
+        lineage=lin, allow_trading=True, now=SLOT_NOW, data_source="cboe",
     )
     assert res.outcome == "proposed_not_sent"
     assert res.reasons[0] == shadow_refusal("cboe_delayed")
@@ -167,23 +185,23 @@ def test_cboe_source_cannot_place_even_with_allow_trading(rules, tmp_path):
     assert not any(a["kind"] == "fill" for a in cyc["artifacts"])
     order = next(a for a in cyc["artifacts"] if a["kind"] == "order")
     assert order["payload"]["sent"] is False
-    assert lin.open_positions("spy-defined-risk-rr", "dry_run") == []
+    assert lin.open_positions(NAME, "dry_run") == []
 
 
 def test_cboe_shadow_does_not_consume_daily_entry_slot(tmp_path):
     """Every cycle can still evaluate; shadow proposes are not real entries."""
     lin = Lineage(str(tmp_path / "s.db"))
-    r1 = run_cycle(STRAT, mode="dry_run", provider=provider([]), broker=ExplodingBroker(),
-                   lineage=lin, allow_trading=True, now=RTH_NOW, data_source="cboe")
-    r2 = run_cycle(STRAT, mode="dry_run", provider=provider([]), broker=ExplodingBroker(),
-                   lineage=lin, allow_trading=True, now=RTH_NOW, data_source="cboe")
+    r1 = run_cycle(STRAT, mode="dry_run", provider=BoundProvider(provider([])), broker=ExplodingBroker(),
+                   lineage=lin, allow_trading=True, now=SLOT_NOW, data_source="cboe")
+    r2 = run_cycle(STRAT, mode="dry_run", provider=BoundProvider(provider([])), broker=ExplodingBroker(),
+                   lineage=lin, allow_trading=True, now=SLOT_NOW, data_source="cboe")
     assert r1.outcome == r2.outcome == "proposed_not_sent"
 
 
 def test_ib_path_still_places_on_same_fixture(tmp_path):
     lin = Lineage(str(tmp_path / "s.db"))
     res = run_cycle(STRAT, mode="dry_run", provider=FixtureMarketState(ENTRY),
-                    broker=SimBroker(), lineage=lin, allow_trading=True, now=RTH_NOW)
+                    broker=SimBroker(), lineage=lin, allow_trading=True, now=SLOT_NOW)
     assert res.outcome == "entered"
     dec = next(a for a in lin.get_cycle(res.cycle_id)["artifacts"] if a["kind"] == "decision")
     assert "data_source" not in dec["payload"]
@@ -210,8 +228,8 @@ def test_cli_dry_run_cboe_is_record_only(tmp_path, capsys):
 
 def test_report_summarizes_intent_and_greeks(tmp_path):
     lin = Lineage(str(tmp_path / "s.db"))
-    res = run_cycle(STRAT, mode="dry_run", provider=provider([]), broker=ExplodingBroker(),
-                    lineage=lin, allow_trading=True, now=RTH_NOW, data_source="cboe")
+    res = run_cycle(STRAT, mode="dry_run", provider=BoundProvider(provider([])), broker=ExplodingBroker(),
+                    lineage=lin, allow_trading=True, now=SLOT_NOW, data_source="cboe")
     text = summarize(lin.get_cycle(res.cycle_id))
     assert "data_source=cboe_delayed" in text and "decision: enter" in text
     assert "SELL SPY" in text and "d=" in text
@@ -223,8 +241,8 @@ def test_daily_closes_from_cboe_history_json(rules):
     rows = [ln.split(",") for ln in FX["bars_csv"].splitlines()[1:] if ln.strip()]
     hist = json.dumps({"data": [{"date": r[0], "close": float(r[4])} for r in reversed(rows)]})
     calls: list = []
-    snap = provider(calls, bars=hist).snapshot(rules, held_legs=[])
-    csv_snap = provider([]).snapshot(rules, held_legs=[])
+    snap = provider(calls, bars=hist).snapshot(rules, held_legs=[], underlying="SPY")
+    csv_snap = provider([]).snapshot(rules, held_legs=[], underlying="SPY")
     assert snap.status == "ok", snap.reason
     assert snap.daily_closes == csv_snap.daily_closes
     assert any("/charts/historical/SPY.json" in c.url.path for c in calls)
@@ -255,7 +273,7 @@ def test_undated_or_today_bars_are_skipped():
 
 def test_stale_daily_bars_unavailable(rules):
     rows = [{"date": f"2026-08-{i:02d}", "close": 100.0 + i} for i in range(1, 26)]
-    snap = provider([], bars=json.dumps({"data": rows})).snapshot(rules, held_legs=[])
+    snap = provider([], bars=json.dumps({"data": rows})).snapshot(rules, held_legs=[], underlying="SPY")
     assert snap.status == "unavailable"
     assert snap.reason.startswith("historical_bars_stale")
     assert f"max_lag_d={MAX_BAR_LAG_DAYS}" in snap.reason

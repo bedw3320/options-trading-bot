@@ -1,13 +1,11 @@
-"""Deterministic construction and exit rules for the as-built defined-risk RR.
+"""Deterministic construction for the in-force standard risk reversal.
 
-Structure (one expiry, 1 combo): SELL ~22d put, BUY wing put `wing_width` lower,
-BUY call sized so the combo is ~zero-cost. Max loss = (width + net debit) x 100.
+Structure (one expiry, 1 combo): SELL listed ~25-delta put, BUY listed ~25-delta
+call. Same expiry, 30-45 DTE, 1 lot. No protective put, no defined max loss,
+no $20 wing, no net-debit cap.
+
 Pure functions of (snapshot, rules, position). No I/O.
-
-Superseded intent: product-in-force (locked 2026-11-11) is a standard RR
-(short put + long call), no protective put, no defined max loss, no automated
-exits — see knowledge/ops/exit-strategy.md. This module still implements the
-YAML yellow-zone evaluate_exit order until a later strategy PR.
+Closes are not evaluated here — product close is manual flatten.
 """
 
 from __future__ import annotations
@@ -17,24 +15,6 @@ from typing import Any
 from core.signals import dte, snapshot_date, usable
 from schemas.cycle import ComboIntent, ComboLeg, MarketSnapshot, OptionRow
 from schemas.strategy import DeterministicRules
-
-# Keep this fraction of the wing above the long put so a % stop cannot sit
-# at or below the protective strike (where the spread is already ~max loss).
-WING_STOP_REMAINING = 0.25
-
-
-def underlying_stop_level(
-    short_put_strike: float, long_put_strike: float, pct_below_short: float
-) -> float:
-    """SPY stop: short × (1 − pct/100), floored at long + 25% of the wing.
-
-    For a typical $20 SPY wing the 3% rule is ~$22 below the short put and
-    would fire under the long put; the floor keeps the trigger above the wing.
-    """
-    wing = short_put_strike - long_put_strike
-    pct_level = short_put_strike * (1.0 - pct_below_short / 100.0)
-    floor = long_put_strike + WING_STOP_REMAINING * wing
-    return max(pct_level, floor)
 
 
 def spread_pct(row: OptionRow) -> float | None:
@@ -65,6 +45,45 @@ def _leg(row: OptionRow, action: str) -> ComboLeg:
     )
 
 
+def _expiry_rows(snapshot: MarketSnapshot, rules: DeterministicRules) -> tuple[list[OptionRow], int] | tuple[None, list[str]]:
+    s = rules.structure
+    if snapshot.expiry is None:
+        return None, ["no expiry in DTE window"]
+    days = dte(snapshot.expiry, snapshot_date(snapshot))
+    if not (s.dte_min <= days <= s.dte_max):
+        return None, [f"expiry {snapshot.expiry} DTE {days} outside [{s.dte_min},{s.dte_max}]"]
+    rows = [r for r in snapshot.options if r.expiry == snapshot.expiry and usable(r)]
+    return rows, days
+
+
+def pick_25d_put(rows: list[OptionRow], rules: DeterministicRules) -> tuple[OptionRow | None, list[str]]:
+    s = rules.structure
+    puts = [r for r in rows if r.right == "P"]
+    shorts = [p for p in puts if s.short_put_delta_min <= abs(p.delta) <= s.short_put_delta_max]
+    shorts_ok = [p for p in shorts if liquidity_problem(p, rules) is None]
+    if not shorts_ok:
+        why = [liquidity_problem(p, rules) for p in shorts if liquidity_problem(p, rules)]
+        return None, (
+            [f"no liquid short put with |delta| in [{s.short_put_delta_min},{s.short_put_delta_max}]"]
+            + why[:3]
+        )
+    short_put = min(shorts_ok, key=lambda p: (abs(abs(p.delta) - s.short_put_delta_target), -p.strike))
+    return short_put, []
+
+
+def pick_25d_call(rows: list[OptionRow], rules: DeterministicRules) -> tuple[OptionRow | None, list[str]]:
+    s = rules.structure
+    calls = [r for r in rows if r.right == "C"]
+    cands = [
+        c for c in calls
+        if s.long_call_delta_min <= c.delta <= s.long_call_delta_max and liquidity_problem(c, rules) is None
+    ]
+    if not cands:
+        return None, [f"no liquid call with delta in [{s.long_call_delta_min},{s.long_call_delta_max}]"]
+    call = min(cands, key=lambda c: (abs(c.delta - s.long_call_delta_target), c.strike))
+    return call, []
+
+
 def build_entry(
     snapshot: MarketSnapshot,
     rules: DeterministicRules,
@@ -72,70 +91,38 @@ def build_entry(
     strategy_name: str,
     idempotency_key: str,
 ) -> tuple[ComboIntent | None, list[str]]:
-    """Return (intent, reasons). intent is None => abstain with reasons."""
-    s = rules.structure
-    reasons: list[str] = []
-    if snapshot.expiry is None:
-        return None, ["no expiry in DTE window"]
-    days = dte(snapshot.expiry, snapshot_date(snapshot))
-    if not (s.dte_min <= days <= s.dte_max):
-        return None, [f"expiry {snapshot.expiry} DTE {days} outside [{s.dte_min},{s.dte_max}]"]
+    """Return (intent, reasons). intent is None => abstain with reasons.
 
-    rows = [r for r in snapshot.options if r.expiry == snapshot.expiry and usable(r)]
-    puts = [r for r in rows if r.right == "P"]
-    calls = [r for r in rows if r.right == "C"]
+    2-leg standard RR: SELL 25d put + BUY 25d call, 1 lot, same expiry.
+    """
+    got = _expiry_rows(snapshot, rules)
+    if got[0] is None:
+        return None, got[1]  # type: ignore[return-value]
+    rows, days = got  # type: ignore[misc]
+    short_put, why = pick_25d_put(rows, rules)
+    if short_put is None:
+        return None, why
+    call, why = pick_25d_call(rows, rules)
+    if call is None:
+        return None, why
 
-    shorts = [p for p in puts if s.short_put_delta_min <= abs(p.delta) <= s.short_put_delta_max]
-    shorts_ok = [p for p in shorts if liquidity_problem(p, rules) is None]
-    if not shorts_ok:
-        why = [liquidity_problem(p, rules) for p in shorts if liquidity_problem(p, rules)]
-        return None, [f"no liquid short put with |delta| in [{s.short_put_delta_min},{s.short_put_delta_max}]"] + why[:3]
-    short_put = min(shorts_ok, key=lambda p: (abs(abs(p.delta) - s.short_put_delta_target), -p.strike))
-
-    wing_target = short_put.strike - s.wing_width
-    wings = sorted((p for p in puts if p.strike <= wing_target + 1e-9), key=lambda p: -p.strike)
-    if not wings:
-        return None, [f"no wing put at or below {wing_target}"]
-    wing = wings[0]
-    if (problem := liquidity_problem(wing, rules)):
-        return None, [f"wing put illiquid: {problem}"]
-
-    credit = short_put.mid - wing.mid
-    call_cands = [
-        c for c in calls
-        if s.long_call_delta_min <= c.delta <= s.long_call_delta_max and liquidity_problem(c, rules) is None
-    ]
-    if not call_cands:
-        return None, [f"no liquid call with delta in [{s.long_call_delta_min},{s.long_call_delta_max}]"]
-    affordable = [c for c in call_cands if c.mid - credit <= s.max_net_debit + 1e-9]
-    if not affordable:
-        cheapest = min(call_cands, key=lambda c: c.mid)
-        return None, [f"zero-cost not reachable: cheapest call {cheapest.occ} mid {cheapest.mid:.2f}"
-                      f" vs put-spread credit {credit:.2f} (max debit {s.max_net_debit})"]
-    call = min(affordable, key=lambda c: (abs(c.mid - credit), c.strike))
-
-    net_debit = round(call.mid + wing.mid - short_put.mid, 2)
-    width = short_put.strike - wing.strike
+    net = round(call.mid - short_put.mid, 2)
     qty = rules.sizing.contracts
-    max_loss = round((width + net_debit) * 100.0 * qty, 2)
-    if max_loss > rules.sizing.max_loss_usd:
-        return None, [f"max loss ${max_loss:.0f} > cap ${rules.sizing.max_loss_usd:.0f}"]
-
     intent = ComboIntent(
         strategy=strategy_name,
-        underlying=rules.underlying,
+        underlying=snapshot.underlying,
         purpose="open",
-        legs=[_leg(short_put, "SELL"), _leg(wing, "BUY"), _leg(call, "BUY")],
+        legs=[_leg(short_put, "SELL"), _leg(call, "BUY")],
         quantity=qty,
         action="BUY",
-        limit_price=net_debit,
-        max_loss_usd=max_loss,
+        limit_price=net,
+        max_loss_usd=None,
         idempotency_key=idempotency_key,
     )
-    reasons.append(
-        f"enter: SELL {short_put.occ} (d={short_put.delta:.3f}) BUY {wing.occ} BUY {call.occ}"
-        f" (d={call.delta:.3f}) net {net_debit:+.2f}/sh, max loss ${max_loss:.0f}, DTE {days}"
-    )
+    reasons = [
+        f"enter: SELL {short_put.occ} (d={short_put.delta:.3f}) BUY {call.occ}"
+        f" (d={call.delta:.3f}) net {net:+.2f}/sh, DTE {days}"
+    ]
     return intent, reasons
 
 
@@ -157,36 +144,16 @@ def evaluate_exit(
 ) -> tuple[str | None, float | None, list[str]]:
     """Return (trigger, mark, reasons). trigger None => hold.
 
-    As-built YAML order (21 DTE / underlying / -$1250 / +$1000). Superseded
-    product intent — see knowledge/ops/exit-strategy.md. Do not treat as
-    product-in-force; logic is unchanged until a later strategy PR.
+    In-force: no automated exits. Cycle uses flatten for product close.
     """
-    ex = rules.exits
-    legs = position["legs"]
-    expiry = legs[0]["expiry"]
-    days = dte(expiry, snapshot_date(snapshot))
-    short_put = next(l for l in legs if l["action"] == "SELL" and l["right"] == "P")
-    long_put = next(l for l in legs if l["action"] == "BUY" and l["right"] == "P")
-    stop_level = underlying_stop_level(
-        short_put["strike"], long_put["strike"], ex.underlying_stop_pct_below_short_put,
-    )
+    del rules
     mark = combo_mark(position, snapshot.held_marks)
+    expiry = (position.get("legs") or [{}])[0].get("expiry")
+    days = None if not expiry else dte(expiry, snapshot_date(snapshot))
+    dte_bit = f"DTE {days}" if days is not None else "DTE n/a"
     pnl = None if mark is None else (mark - position["entry_price"]) * 100.0 * position["quantity"]
-
-    if days <= ex.time_stop_dte:
-        return "time_stop", mark, [f"DTE {days} <= {ex.time_stop_dte}"]
-    if snapshot.underlying_price is not None and snapshot.underlying_price <= stop_level:
-        return "underlying_stop", mark, [
-            f"{rules.underlying} {snapshot.underlying_price:.2f} <= {stop_level:.2f}"
-            f" (short {short_put['strike']} / long {long_put['strike']},"
-            f" max(short-{ex.underlying_stop_pct_below_short_put}%, long+25% wing))"]
-    if pnl is None:
-        return None, None, ["hold: leg marks unavailable, P&L exits not evaluable"]
-    if pnl <= -ex.stop_loss_usd:
-        return "stop_loss", mark, [f"unrealized ${pnl:.0f} <= -${ex.stop_loss_usd:.0f}"]
-    if pnl >= ex.take_profit_usd:
-        return "take_profit", mark, [f"unrealized ${pnl:.0f} >= ${ex.take_profit_usd:.0f}"]
-    return None, mark, [f"hold: DTE {days}, unrealized ${pnl:.0f}, stop level {stop_level:.2f}"]
+    pnl_bit = "marks unavailable" if pnl is None else f"unrealized ${pnl:.0f}"
+    return None, mark, [f"hold: no automated exits ({dte_bit}, {pnl_bit}); close is manual flatten"]
 
 
 def build_exit(
@@ -195,9 +162,15 @@ def build_exit(
 ) -> ComboIntent | None:
     if mark is None:
         return None
+    underlying = position.get("underlying") or rules.underlying or ""
+    if not underlying:
+        legs = position.get("legs") or []
+        if legs:
+            occ = str(legs[0].get("occ") or "")
+            underlying = occ[:-15] if len(occ) > 15 else occ
     return ComboIntent(
         strategy=strategy_name,
-        underlying=rules.underlying,
+        underlying=underlying,
         purpose="close",
         legs=[ComboLeg(**leg) for leg in position["legs"]],
         quantity=position["quantity"],

@@ -87,9 +87,8 @@ live account id as `U****8141`. Never copy TWS secrets or `.env`.
 
 - **In force:** standard RR (short put + long call), no protective put, no
   defined max loss, no automated yellow-zone exits, manual flatten only.
-- **As-built:** `strategies/active/` is not empty — it holds
-  `spy-defined-risk-rr.yaml` (defined-risk + YAML `evaluate_exit`). Superseded
-  intent; left in place until a later strategy PR.
+- **As-built:** `strategies/active/us-large-cap-rr.yaml` is the loaded
+  standard RR. `spy-defined-risk-rr.yaml` remains as superseded/historical.
 - Watchlist (`strategies/watchlist.yaml`) exists for Epic 5 research intake.
   The runner does not load it.
 

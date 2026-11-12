@@ -4,8 +4,8 @@ Decision behavior stays in core/cycle.py and core/rr_rules.py. This module
 only *records* every gate for every candidate so a later `explain` can show
 what else would have blocked and how close passing gates were.
 
-There are no learned weights. Ranking is the same deterministic key
-`build_entry` uses (see RANKING_DESCRIPTION).
+There are no learned weights. Ranking is richest rr25 first, then the
+deterministic 25d/25d listed-strike construction (see RANKING_DESCRIPTION).
 """
 
 from __future__ import annotations
@@ -13,20 +13,21 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from core.rr_rules import combo_mark, spread_pct, underlying_stop_level
+from core.rr_rules import combo_mark, spread_pct
 from core.signals import dte, snapshot_date
 from schemas.cycle import MarketSnapshot, OptionRow, SignalValue
-from schemas.decision import GATE_CATALOG_VERSION, GateEval
+from schemas.decision import GateEval
 from schemas.strategy import DeterministicRules
 
 RANKING_DESCRIPTION = (
-    "No learned weights. Ranking is deterministic: short put closest |delta| to "
-    "the YAML target, then higher strike; wing put is the highest strike at or "
-    "below short minus wing_width; long call closest mid to the put-spread credit, "
-    "then lower strike. The first combo that passes every gate in that order is chosen."
+    "No learned weights. Names that clear rr25 <= max_rr25 and 25d/25d liquidity "
+    "are ranked by richest rr25 (most negative first). Construction picks the listed "
+    "short put closest |delta| to 0.25 (then higher strike) and the listed long call "
+    "closest delta to 0.25 (then lower strike), same expiry, 1 lot. No second risk "
+    "reversal on a name that already has an open position. Up to 5 new opens per run "
+    "and 10 per day; no outstanding position-count cap."
 )
 
-# Stable names + units. Bump GATE_CATALOG_VERSION if a name or unit changes.
 CYCLE_GATES: dict[str, str] = {
     "identity_ok": "bool",
     "market_open": "bool",
@@ -34,7 +35,8 @@ CYCLE_GATES: dict[str, str] = {
     "market_data_ok": "bool",
     "flatten_has_position": "bool",
     "kill_switch_clear": "bool",
-    "max_entries_per_day": "count",
+    "max_new_opens_per_day": "count",
+    "max_new_opens_per_run": "count",
     "entry_window": "bool",
     "dte_min": "dte",
     "dte_max": "dte",
@@ -51,26 +53,15 @@ CONSTRUCTION_GATES: dict[str, str] = {
     "short_put_bid_ask": "bool",
     "short_put_spread_pct": "pct_of_mid",
     "short_put_open_interest": "contracts",
-    "wing_put_exists": "bool",
-    "wing_put_bid_ask": "bool",
-    "wing_put_spread_pct": "pct_of_mid",
-    "wing_put_open_interest": "contracts",
     "call_delta_min": "abs_delta",
     "call_delta_max": "abs_delta",
     "call_bid_ask": "bool",
     "call_spread_pct": "pct_of_mid",
     "call_open_interest": "contracts",
-    "net_debit": "usd_per_share",
-    "max_loss_usd": "usd",
 }
 
 EXIT_GATES: dict[str, str] = {
-    "exit_time_stop": "dte",
-    "exit_underlying_stop": "usd",
     "exit_marks_available": "bool",
-    "exit_stop_loss": "usd",
-    "exit_take_profit": "usd",
-    "exit_daily_loss": "usd",
     "manual_flatten": "bool",
 }
 
@@ -91,7 +82,8 @@ ENTRY_BIND_ORDER = (
     "market_data_ok",
     "flatten_has_position",
     "kill_switch_clear",
-    "max_entries_per_day",
+    "max_new_opens_per_day",
+    "max_new_opens_per_run",
     "entry_window",
     "dte_min",
     "dte_max",
@@ -108,25 +100,11 @@ CONSTRUCTION_BIND_ORDER = (
     "short_put_bid_ask",
     "short_put_spread_pct",
     "short_put_open_interest",
-    "wing_put_exists",
-    "wing_put_bid_ask",
-    "wing_put_spread_pct",
-    "wing_put_open_interest",
     "call_delta_min",
     "call_delta_max",
     "call_bid_ask",
     "call_spread_pct",
     "call_open_interest",
-    "net_debit",
-    "max_loss_usd",
-)
-
-EXIT_BIND_ORDER = (
-    "exit_time_stop",
-    "exit_underlying_stop",
-    "exit_marks_available",
-    "exit_stop_loss",
-    "exit_take_profit",
 )
 
 
@@ -239,7 +217,9 @@ class CycleGateCtx:
     kill_latched: bool | None = None
     kill_skip: str | None = None
     entries_today: int | None = None
+    opens_this_run: int | None = None
     max_entries: int | None = None
+    max_per_run: int | None = None
     in_entry_window: bool | None = None
     window_skip: str | None = None
     dte_days: int | None = None
@@ -253,6 +233,8 @@ class CycleGateCtx:
 
 def evaluate_cycle_gates(ctx: CycleGateCtx, rules: DeterministicRules) -> list[GateEval]:
     """Every cycle-level gate, including skipped-with-reason. No short-circuit."""
+    day_cap = float(ctx.max_entries if ctx.max_entries is not None else rules.opens_per_day())
+    run_cap = float(ctx.max_per_run if ctx.max_per_run is not None else rules.opens_per_run())
     out: list[GateEval] = [
         _bool_gate("identity_ok", ctx.identity_ok, skip_reason=ctx.identity_skip),
         _bool_gate("market_open", ctx.market_open, skip_reason=ctx.market_open_skip),
@@ -265,22 +247,24 @@ def evaluate_cycle_gates(ctx: CycleGateCtx, rules: DeterministicRules) -> list[G
         out.append(_bool_gate("flatten_has_position", None, skip_reason="flatten not requested"))
     if ctx.phase in ("exit", "hold") and not ctx.flatten:
         out.append(_bool_gate("kill_switch_clear", None,
-                             skip_reason="kill switch does not block hold/exit"))
+                             skip_reason="kill switch does not block hold/flatten"))
     else:
         out.append(_bool_gate("kill_switch_clear", None if ctx.kill_latched is None else (not ctx.kill_latched),
                              skip_reason=ctx.kill_skip))
-    if ctx.phase in ("exit", "hold"):
-        out.append(_eval("max_entries_per_day", None, "lt",
-                         float(ctx.max_entries or rules.sizing.max_entries_per_day),
+    if ctx.phase in ("exit", "hold") and not ctx.flatten:
+        out.append(_eval("max_new_opens_per_day", None, "lt", day_cap,
+                         skip_reason="open position: entry cap not used"))
+        out.append(_eval("max_new_opens_per_run", None, "lt", run_cap,
                          skip_reason="open position: entry cap not used"))
         out.append(_bool_gate("entry_window", None, skip_reason="open position: entry window not used"))
     else:
-        cap = float(ctx.max_entries if ctx.max_entries is not None else rules.sizing.max_entries_per_day)
         if ctx.entries_today is None:
-            out.append(_eval("max_entries_per_day", None, "lt", cap,
+            out.append(_eval("max_new_opens_per_day", None, "lt", day_cap,
                              skip_reason="entries_today unavailable"))
         else:
-            out.append(_eval("max_entries_per_day", float(ctx.entries_today), "lt", cap))
+            out.append(_eval("max_new_opens_per_day", float(ctx.entries_today), "lt", day_cap))
+        run_n = 0.0 if ctx.opens_this_run is None else float(ctx.opens_this_run)
+        out.append(_eval("max_new_opens_per_run", run_n, "lt", run_cap))
         out.append(_bool_gate("entry_window", ctx.in_entry_window, skip_reason=ctx.window_skip))
 
     if ctx.dte_days is None:
@@ -343,14 +327,6 @@ class ConstructionReport:
     chosen_legs: list[OptionRow] = field(default_factory=list)
 
 
-def _wing_for(short: OptionRow, puts: list[OptionRow], width: float) -> OptionRow | None:
-    target = short.strike - width
-    wings = [p for p in puts if p.strike <= target + 1e-9]
-    if not wings:
-        return None
-    return max(wings, key=lambda p: p.strike)
-
-
 def _abs_delta(row: OptionRow | None) -> float | None:
     if row is None or row.delta is None:
         return None
@@ -358,7 +334,7 @@ def _abs_delta(row: OptionRow | None) -> float | None:
 
 
 def evaluate_construction(snapshot: MarketSnapshot, rules: DeterministicRules) -> ConstructionReport:
-    """Every construction gate for every (short, wing, call) candidate. No short-circuit."""
+    """Every construction gate for every (short put, long call) in the 25d band."""
     report = ConstructionReport()
     if snapshot.status != "ok":
         report.gates = _skip_group(CONSTRUCTION_GATES, "no market snapshot")
@@ -377,9 +353,8 @@ def evaluate_construction(snapshot: MarketSnapshot, rules: DeterministicRules) -
 
     scored: list[tuple[tuple, str, list[GateEval], list[dict[str, Any]], bool]] = []
     for short in puts:
-        wing = _wing_for(short, puts, s.wing_width)
         for call in call_list:
-            cid = f"{short.occ}|{wing.occ if wing else 'NONE'}|{call.occ if call else 'NONE'}"
+            cid = f"{short.occ}|{call.occ if call else 'NONE'}"
             gates: list[GateEval] = []
             ad = _abs_delta(short)
             gates.append(_eval("short_put_delta_min", ad, "ge", s.short_put_delta_min, candidate_id=cid,
@@ -387,39 +362,20 @@ def evaluate_construction(snapshot: MarketSnapshot, rules: DeterministicRules) -
             gates.append(_eval("short_put_delta_max", ad, "le", s.short_put_delta_max, candidate_id=cid,
                                skip_reason=None if ad is not None else f"{short.occ}: delta missing"))
             gates.extend(_liquidity(short, "short_put", rules, cid, f"{short.occ}: missing"))
-            gates.append(_bool_gate("wing_put_exists", wing is not None, candidate_id=cid))
-            gates.extend(_liquidity(wing, "wing_put", rules, cid, "no wing put"))
             cad = _abs_delta(call)
             gates.append(_eval("call_delta_min", cad, "ge", s.long_call_delta_min, candidate_id=cid,
                                skip_reason=None if cad is not None else "no call on expiry"))
             gates.append(_eval("call_delta_max", cad, "le", s.long_call_delta_max, candidate_id=cid,
                                skip_reason=None if cad is not None else "no call on expiry"))
             gates.extend(_liquidity(call, "call", rules, cid, "no call on expiry"))
-            credit = None
-            if short.mid is not None and wing is not None and wing.mid is not None:
-                credit = short.mid - wing.mid
-            debit = None
-            if credit is not None and call is not None and call.mid is not None:
-                debit = call.mid - credit
-            gates.append(_eval("net_debit", debit, "le", s.max_net_debit, candidate_id=cid,
-                               skip_reason=None if debit is not None else "mid unavailable"))
-            loss = None
-            if debit is not None and wing is not None:
-                loss = round((short.strike - wing.strike + round(call.mid + wing.mid - short.mid, 2))
-                             * 100.0 * rules.sizing.contracts, 2)
-            gates.append(_eval("max_loss_usd", loss, "le", rules.sizing.max_loss_usd, candidate_id=cid,
-                               skip_reason=None if loss is not None else "cannot price combo"))
             passed = all(g.result == "pass" for g in gates)
             d_short = abs(ad - s.short_put_delta_target) if ad is not None else 99.0
-            call_fit = abs(call.mid - credit) if (call is not None and call.mid is not None and credit is not None) else 99.0
-            key = (d_short, -(short.strike), call_fit, call.strike if call is not None else 9999.0)
+            d_call = abs(cad - s.long_call_delta_target) if cad is not None else 99.0
+            key = (d_short, -(short.strike), d_call, call.strike if call is not None else 9999.0)
             legs = [
                 {"occ": short.occ, "action": "SELL", "right": "P", "strike": short.strike,
                  "delta": short.delta, "bid": short.bid, "ask": short.ask},
             ]
-            if wing:
-                legs.append({"occ": wing.occ, "action": "BUY", "right": "P", "strike": wing.strike,
-                             "delta": wing.delta, "bid": wing.bid, "ask": wing.ask})
             if call:
                 legs.append({"occ": call.occ, "action": "BUY", "right": "C", "strike": call.strike,
                              "delta": call.delta, "bid": call.bid, "ask": call.ask})
@@ -434,7 +390,7 @@ def evaluate_construction(snapshot: MarketSnapshot, rules: DeterministicRules) -
         rejected = None if chosen else (fail or skip or "ranked_below")
         report.candidates.append({
             "candidate_id": cid, "legs": legs, "rank": rank, "chosen": chosen,
-            "rejected_reason": rejected,
+            "rejected_reason": rejected, "underlying": snapshot.underlying,
         })
         report.gates.extend(gates)
         if chosen:
@@ -450,39 +406,17 @@ def evaluate_exit_gates(
     flatten: bool,
     daily_pnl: float,
 ) -> list[GateEval]:
-    """Every exit gate, including distance-to-trigger on a HOLD. No short-circuit."""
-    ex = rules.exits
+    """In-force exit gates: marks + manual flatten. No yellow-zone distances."""
+    del daily_pnl, rules
     legs = position.get("legs") or []
     if not legs:
         return _skip_group(EXIT_GATES, "position has no legs")
-    expiry = legs[0]["expiry"]
-    days = dte(expiry, snapshot_date(snapshot))
-    short_put = next(l for l in legs if l["action"] == "SELL" and l["right"] == "P")
-    long_put = next(l for l in legs if l["action"] == "BUY" and l["right"] == "P")
-    stop_level = underlying_stop_level(
-        short_put["strike"], long_put["strike"], ex.underlying_stop_pct_below_short_put,
-    )
     mark = combo_mark(position, snapshot.held_marks)
-    pnl = None if mark is None else (mark - float(position["entry_price"])) * 100.0 * int(position["quantity"])
-    out = [
-        _eval("exit_time_stop", float(days), "gt", float(ex.time_stop_dte)),
-        _eval("exit_underlying_stop", snapshot.underlying_price, "gt", stop_level,
-              skip_reason=None if snapshot.underlying_price is not None else "underlying price unavailable"),
-        _bool_gate("exit_marks_available", mark is not None),
-    ]
-    if pnl is None:
-        out.append(_eval("exit_stop_loss", None, "gt", -ex.stop_loss_usd,
-                         skip_reason="leg marks unavailable"))
-        out.append(_eval("exit_take_profit", None, "lt", ex.take_profit_usd,
-                         skip_reason="leg marks unavailable"))
-    else:
-        out.append(_eval("exit_stop_loss", pnl, "gt", -ex.stop_loss_usd))
-        out.append(_eval("exit_take_profit", pnl, "lt", ex.take_profit_usd))
-    out.append(_eval("exit_daily_loss", daily_pnl, "gt", -rules.kill_switch.daily_loss_limit_usd))
+    out = [_bool_gate("exit_marks_available", mark is not None)]
     if flatten:
         out.append(_bool_gate("manual_flatten", True))
     else:
-        out.append(_bool_gate("manual_flatten", None, skip_reason="flatten not requested"))
+        out.append(_bool_gate("manual_flatten", None, skip_reason="flatten not requested; no automated exits"))
     return out
 
 
@@ -497,7 +431,7 @@ def binding_gate(
 ) -> str | None:
     """First failing required gate in the live short-circuit order. Recording is not this."""
     by = {g.gate: g for g in cycle_gates if g.candidate_id is None}
-    req = required_signals or set(SIGNAL_META)
+    req = required_signals or {"rr25"}
 
     def failed(name: str) -> bool:
         g = by.get(name)
@@ -514,8 +448,7 @@ def binding_gate(
     if flatten and failed("flatten_has_position"):
         return "flatten_has_position"
     if phase == "entry":
-        # Same order as core/cycle.py: kill → cap → window → signals → construction (DTE).
-        for name in ("kill_switch_clear", "max_entries_per_day", "entry_window"):
+        for name in ("kill_switch_clear", "max_new_opens_per_day", "max_new_opens_per_run", "entry_window"):
             if failed(name):
                 return name
         for name in ("signal_rr25", "signal_put_call_iv_ratio", "signal_atm_iv_minus_rv",
@@ -532,30 +465,19 @@ def binding_gate(
         if construction and construction.chosen_id:
             return None
         if construction:
-            # Same hierarchical first-failure as build_entry, on the best-ranked
-            # short that is in the delta window (liquid or not).
             return _construction_binding(construction)
         return None
 
-    # exit / hold
     if flatten:
         if exit_gates and any(g.gate == "exit_marks_available" and g.result == "fail" for g in exit_gates):
             return "exit_marks_available"
         return "manual_flatten"
-    if not exit_gates:
-        return None
-    ex = {g.gate: g for g in exit_gates}
-    for name in EXIT_BIND_ORDER:
-        g = ex.get(name)
-        if g is not None and g.result == "fail":
-            return name
-    return None  # hold: no exit trigger
+    return None  # hold: no automated exit trigger
 
 
 def _construction_binding(construction: ConstructionReport) -> str | None:
     if not construction.candidates:
         return "short_put_delta_min"
-    # Prefer a candidate whose short is inside the delta window (mirrors build_entry).
     in_band: list[dict[str, Any]] = []
     for c in construction.candidates:
         gs = [g for g in construction.gates if g.candidate_id == c["candidate_id"]]
@@ -572,7 +494,7 @@ def _construction_binding(construction: ConstructionReport) -> str | None:
         if g is not None and g.result == "fail":
             return name
         if g is not None and g.result == "skipped" and name in (
-            "wing_put_exists", "short_put_bid_ask", "call_bid_ask", "net_debit", "max_loss_usd",
+            "short_put_bid_ask", "call_bid_ask",
         ):
             return name
     return best.get("rejected_reason")
@@ -599,7 +521,7 @@ def derive_reasons(
         reason = extra.get("snapshot_reason") or "unavailable"
         bits = [f"market_data_unavailable: {reason}"]
         if extra.get("has_position"):
-            bits.append("open position: exits not evaluable this cycle")
+            bits.append("open position: marks not evaluable this cycle")
         if extra.get("kill_note"):
             bits.append(extra["kill_note"])
         return bits
@@ -610,11 +532,15 @@ def derive_reasons(
         return bits
     if binding == "kill_switch_clear":
         return [extra.get("kill_note") or "kill_switch_latched", "new entries blocked"]
-    if binding == "max_entries_per_day":
+    if binding == "max_new_opens_per_day":
         n = extra.get("max_entries")
-        return [f"max_entries_per_day {n} reached"]
+        return [f"max_new_opens_per_day {n} reached"]
+    if binding == "max_new_opens_per_run":
+        n = extra.get("max_per_run")
+        return [f"max_new_opens_per_run {n} reached"]
     if binding == "entry_window":
-        return [f"outside entry window {extra.get('entry_window')} ET"]
+        slots = extra.get("entry_slots") or extra.get("entry_window")
+        return [f"outside entry window {slots} {extra.get('entry_timezone') or 'America/Toronto'}"]
     if binding == "dte_min" or binding == "dte_max":
         g = by.get(binding)
         if extra.get("expiry") is None:
@@ -635,11 +561,10 @@ def derive_reasons(
         return extra.get("exit_reasons") or ["manual flatten requested"]
     if binding and binding.startswith("exit_"):
         if binding == "exit_marks_available":
-            trig = extra.get("exit_trigger") or "exit"
-            return [f"exit trigger {trig} but no leg marks to price the close"] + list(extra.get("exit_reasons") or [])
+            return ["flatten requested but no leg marks to price the close"] + list(extra.get("exit_reasons") or [])
         return list(extra.get("exit_reasons") or [binding])
     if phase == "hold":
-        return list(extra.get("exit_reasons") or ["holding position"])
+        return list(extra.get("exit_reasons") or ["holding position; no automated exits"])
     if construction and not construction.chosen_id:
         return _construction_reasons(binding, construction, extra)
     if construction and construction.chosen_id:
@@ -661,34 +586,12 @@ def _construction_reasons(
     if binding in ("short_put_bid_ask", "short_put_spread_pct", "short_put_open_interest"):
         why = _liq_text(gs, "short_put", extra.get("min_oi"), extra.get("max_spread"))
         return [f"no liquid short put with |delta| in [{smin},{smax}]"] + why[:3]
-    if binding == "wing_put_exists":
-        short_occ = best["candidate_id"].split("|")[0]
-        width = extra.get("wing_width")
-        strike = extra.get("short_strikes", {}).get(short_occ)
-        target = None if strike is None or width is None else strike - width
-        return [f"no wing put at or below {target}"]
-    if binding in ("wing_put_bid_ask", "wing_put_spread_pct", "wing_put_open_interest"):
-        why = _liq_text(gs, "wing_put", extra.get("min_oi"), extra.get("max_spread"))
-        detail = why[0] if why else binding
-        return [f"wing put illiquid: {detail}"]
     if binding in ("call_delta_min", "call_delta_max", "call_bid_ask", "call_spread_pct", "call_open_interest"):
         return [f"no liquid call with delta in [{cmin},{cmax}]"]
-    if binding == "net_debit":
-        g = gs.get("net_debit")
-        return [f"zero-cost not reachable: cheapest call (max debit {extra.get('max_net_debit')})"]
-    if binding == "max_loss_usd":
-        g = gs.get("max_loss_usd")
-        cap = extra.get("max_loss_cap")
-        val = None if g is None else g.value
-        return [f"max loss ${val:.0f} > cap ${cap:.0f}"] if val is not None and cap is not None else (
-            ["max loss over cap"]
-        )
     return [binding or "construction failed"]
 
 
 def _liq_text(by: dict[str, GateEval], prefix: str, min_oi: Any, max_spread: Any) -> list[str]:
-    occ = None
-    # candidate_id is short|wing|call; prefix tells which slot
     bid = by.get(f"{prefix}_bid_ask")
     if bid and bid.result == "fail":
         return [f"{_occ_from_cid(bid.candidate_id, prefix)}: no bid/ask"]
@@ -706,8 +609,9 @@ def _liq_text(by: dict[str, GateEval], prefix: str, min_oi: Any, max_spread: Any
 def _occ_from_cid(cid: str | None, prefix: str) -> str:
     if not cid:
         return "?"
-    short, wing, call = (cid.split("|") + ["NONE", "NONE", "NONE"])[:3]
-    return {"short_put": short, "wing_put": wing, "call": call}.get(prefix, short)
+    parts = (cid.split("|") + ["NONE", "NONE"])[:2]
+    short, call = parts[0], parts[1]
+    return {"short_put": short, "call": call}.get(prefix, short)
 
 
 def closest_margins(
@@ -717,7 +621,6 @@ def closest_margins(
     if names is not None:
         scored = [g for g in scored if g.gate in names]
     scored.sort(key=lambda g: g.margin)
-    # Unique gate names, first (smallest margin) wins.
     seen: set[str] = set()
     out: list[GateEval] = []
     for g in scored:
@@ -734,7 +637,7 @@ def source_class(source: str | None) -> Literal["live", "delayed", "fixture"]:
     s = (source or "").lower()
     if "fixture" in s:
         return "fixture"
-    if "cboe" in s or "delayed" in s:
+    if any(tok in s for tok in ("cboe", "delayed", "indicative", "frozen")):
         return "delayed"
     return "live"
 

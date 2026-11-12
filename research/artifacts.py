@@ -82,7 +82,7 @@ def write_artifacts(
     payload = {
         "trade_date": trade_date.isoformat(),
         "as_of": as_of.isoformat(),
-        "note": "PROPOSAL for Will: thresholds inherited from spy-defined-risk-rr.yaml unless overridden",
+            "note": "thresholds inherited from in-force strategy YAML unless overridden",
         "tickers": [s.as_dict() for s in screens],
     }
     json_path = out / f"{trade_date.isoformat()}.json"

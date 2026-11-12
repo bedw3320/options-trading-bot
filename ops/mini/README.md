@@ -29,23 +29,24 @@ Manual prerequisites (can't be scripted safely):
 ## Deterministic strategy cycle
 
 From `~/options-trading-bot` on the Mini (see `knowledge/ops/deterministic-cycle.md`).
-Product-in-force close is `core.cli flatten`, not a 15-minute auto-close; YAML
-yellow-zone exits are superseded (`knowledge/ops/exit-strategy.md`).
+Product-in-force close is `core.cli flatten`, not an auto-close.
+Cadence is two weekday slots (10:00 and 15:00 America/Toronto).
 
     git pull && uv sync
     uv run python -m core.cli run --dry-run && uv run python -m core.cli explain last   # no IB
     TRADING_MODE=paper IB_GATEWAY_HOST=127.0.0.1 IB_GATEWAY_PORT=4002 uv run python -m core.cli run   # paper, journal only
 
-Not scheduled by launchd yet; until IB option data works every paper cycle abstains (10197).
+launchd `com.otb.cycle` fires weekdays at 10:00 and 15:00 America/Toronto (record-only).
+Until live IB option data is on the paper account, paper cycles stay `proposed_not_sent` / delayed shadow.
 
 ## Record-only cycle (`com.otb.cycle`)
 
 `install.sh` renders `com.otb.cycle.plist.template` into `~/Library/LaunchAgents`. launchd fires
-at :00/:15/:30/:45 so a tick is available during RTH; `cycle.sh` exits unless it is a weekday
-10:00–15:30 America/New_York, then runs one `uv run python -m core.cli run` with
+weekdays at 10:00 and 15:00 (Mini local timezone, America/Toronto); `cycle.sh` exits unless it is
+one of those slots (10-minute grace), then runs one `uv run python -m core.cli run` with
 `TRADING_MODE=paper ALLOW_TRADING=false` (journal only, never `--allow-trading`).
-That cadence is **record-only cycle ticks**, not a product auto-close schedule and not
-a 15-minute exit policy. Output: `~/Library/Logs/otb-cycle.log`. The last cycle summary goes to
+That cadence is **record-only cycle ticks**, not a product auto-close schedule.
+Output: `~/Library/Logs/otb-cycle.log`. The last cycle summary goes to
 `~/Library/Application Support/otb/last_cycle.json` and into the heartbeat as `last_cycle`
 (`cycle_id`, `decision`, `reason`). Force one now: `bash ops/mini/cycle.sh --force`; inspect:
 `uv run python -m core.cli explain last`. Flatten (product-in-force close) is a separate

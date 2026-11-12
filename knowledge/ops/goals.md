@@ -11,7 +11,7 @@ manual flatten only. Do not treat vault 21-DTE / defined-risk notes as in-force.
 - [ ] Walking-slice Epic 4 Mini paper evidence (reconcile / debrief / manual flatten on DUT116016) — not yellow-zone auto-exits
 - [ ] Interview strategy brain with `/project:expert-interview`
 - [ ] Expand failure-mode notes (only 3 — need vol collapse, liquidity crisis, skew inversion)
-- [ ] Later: rewrite core-strategy YAML to the locked standard RR (not this docs cleanup)
+- [x] Rewrite core-strategy YAML + runner to the locked standard RR (`us-large-cap-rr.yaml`)
 
 ## Deferred
 

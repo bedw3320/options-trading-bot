@@ -14,7 +14,8 @@
     uv run python -m core.cli kill --reason "manual"        # latch (blocks entries); `rearm` to clear
     uv run python -m core.cli flatten --allow-trading       # paper: product-in-force close (GuardedBroker)
     uv run python -m core.cli flatten --dry-run             # same against fixtures + SimBroker
-    # YAML yellow-zone auto-exits are as-built / superseded: knowledge/ops/exit-strategy.md
+    uv run python -m core.cli paper-reset-snapshot --confirm yes
+    # Closes are manual flatten only. No automated yellow-zone exits.
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-DEFAULT_STRATEGY = "strategies/active/spy-defined-risk-rr.yaml"
+DEFAULT_STRATEGY = "strategies/active/us-large-cap-rr.yaml"
 DEFAULT_FIXTURE = "tests/fixtures/spy_snapshot_entry.json"
 DEFAULT_DB = "state/state.db"
 
@@ -112,10 +113,13 @@ def cmd_run(args) -> int:
             return 3
         src = resolve_data_source(getattr(args, "data_source", None), dry_run=bool(args.dry_run))
         if args.dry_run:
+            from core.entry_window import DRY_RUN_NOW
+
             seeded = expected_option_positions(lineage.open_positions(strategy.name, "dry_run"))
             result = run_cycle(args.strategy, mode="dry_run", provider=FixtureMarketState(args.fixture),
                                broker=SimBroker(seeded), lineage=lineage, allow_trading=True,
-                               flatten=getattr(args, "flatten", False), data_source=src)
+                               flatten=getattr(args, "flatten", False), data_source=src,
+                               now=lambda: DRY_RUN_NOW)
         else:
             from core.identity import assert_paper_identity
             from core.shadow import shadow_tag
@@ -288,12 +292,43 @@ def cmd_reconcile(args) -> int:
         rec = reconcile(
             IBExecution(ib, allow_trading=False, expected_account_id=account),
             Lineage(args.db), strategy=strategy.name, mode="paper",
-            underlying=strategy.rules.underlying, account_id=account,
+            underlying=None, account_id=account,
         )
     finally:
         ib.disconnect()
     print(json.dumps(rec, indent=2, default=str))
     return 0 if rec["ok"] else 1
+
+
+def cmd_paper_reset_snapshot(args) -> int:
+    """Record a paper-reset event and clear open-position snapshot only. Never wipes history."""
+    if str(getattr(args, "confirm", "")).strip().lower() != "yes":
+        print("REFUSED: pass --confirm yes (clears open snapshot only; never wipes cycles/fills/debriefs)",
+              file=sys.stderr)
+        return 2
+    from hashlib import sha256
+
+    from core.strategy_loader import load
+    from utils.lineage import Lineage
+
+    strategy = load(args.strategy)
+    lin = Lineage(args.db)
+    n = lin.clear_open_positions(args.mode)
+    digest = sha256(Path(args.strategy).read_bytes()).hexdigest()
+    cid = lin.start_cycle(
+        strategy=strategy.name, strategy_version=strategy.version, strategy_sha256=digest,
+        mode=args.mode, git_sha=None,
+    )
+    lin.record(cid, "paper_reset", {
+        "cleared_open_positions": n,
+        "note": "open snapshot only; cycles, decision records, fills, debriefs, closed positions kept",
+    })
+    reasons = [f"paper_reset: cleared {n} open position snapshot row(s)"]
+    lin.end_cycle(cid, "abstained", reasons)
+    print(f"{cid} abstained")
+    for r in reasons:
+        print(f"  - {r}")
+    return 0
 
 
 def cmd_debrief(args) -> int:
@@ -334,7 +369,7 @@ def main(argv: list[str] | None = None) -> int:
                         "else env MARKET_DATA_SOURCE or ib. cboe is delayed shadow data and cannot place orders")
     r.set_defaults(fn=cmd_run)
 
-    f = sub.add_parser("flatten", help="close the open strategy position now (allowed while kill switch is latched)")
+    f = sub.add_parser("flatten", help="manual flatten of open structures (allowed while kill switch is latched)")
     f.add_argument("--strategy", default=DEFAULT_STRATEGY)
     f.add_argument("--dry-run", action="store_true")
     f.add_argument("--fixture", default=DEFAULT_FIXTURE)
@@ -371,6 +406,15 @@ def main(argv: list[str] | None = None) -> int:
     rc = sub.add_parser("reconcile")
     rc.add_argument("--strategy", default=DEFAULT_STRATEGY)
     rc.set_defaults(fn=cmd_reconcile)
+
+    prs = sub.add_parser(
+        "paper-reset-snapshot",
+        help="record a paper-reset event and clear open-position snapshot only (never wipes the DB)",
+    )
+    prs.add_argument("--strategy", default=DEFAULT_STRATEGY)
+    prs.add_argument("--mode", choices=("paper", "dry_run"), default="paper")
+    prs.add_argument("--confirm", default="", help="must be 'yes'")
+    prs.set_defaults(fn=cmd_paper_reset_snapshot)
 
     db = sub.add_parser("debrief", help="print the per-trade debrief (keyed by closing cycle_id)")
     db.add_argument("cycle_id", nargs="?", default="last")

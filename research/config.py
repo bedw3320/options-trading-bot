@@ -1,11 +1,8 @@
 """Liquidity / quote-age thresholds for the research screen.
 
-Liquidity numbers default to `strategies/active/spy-defined-risk-rr.yaml`
-`rules.structure` (OI >= 500, spread <= 10% of mid, 30-45 DTE, wing $20).
-That YAML is as-built defined-risk / superseded as product-in-force
-(knowledge/ops/exit-strategy.md). This file does not edit that YAML.
-Overrides live in `research/config.yaml` and are PROPOSALS for Will until
-he says otherwise.
+Liquidity numbers default to `strategies/active/us-large-cap-rr.yaml`
+`rules.structure` (OI >= 500, spread <= 10% of mid, 30-45 DTE, 25d put + 25d call).
+No wing when the in-force YAML has none. Overrides live in `research/config.yaml`.
 """
 
 from __future__ import annotations
@@ -18,7 +15,7 @@ import yaml
 
 from core.strategy_loader import load
 
-DEFAULT_STRATEGY = "strategies/active/spy-defined-risk-rr.yaml"
+DEFAULT_STRATEGY = "strategies/active/us-large-cap-rr.yaml"
 DEFAULT_CONFIG = "research/config.yaml"
 # PROPOSAL for Will: live quotes older than this are stale.
 DEFAULT_MAX_QUOTE_AGE_SECONDS = 60.0
@@ -32,7 +29,7 @@ class ScreenThresholds:
     dte_max: int
     dte_target: int
     target_abs_delta: float
-    wing_width: float
+    wing_width: float | None
     strike_step: float
     max_quote_age_seconds: float
     strategy_path: str
@@ -87,7 +84,10 @@ def load_thresholds(
         dte_max=int(pick("dte_max", s.dte_max)),
         dte_target=int(pick("dte_target", s.dte_target)),
         target_abs_delta=float(pick("target_abs_delta", sig.target_abs_delta)),
-        wing_width=float(pick("wing_width", s.wing_width)),
+        wing_width=(
+            None if pick("wing_width", s.wing_width) is None
+            else float(pick("wing_width", s.wing_width))
+        ),
         strike_step=float(pick("strike_step", s.strike_step)),
         max_quote_age_seconds=float(pick("max_quote_age_seconds", DEFAULT_MAX_QUOTE_AGE_SECONDS)),
         strategy_path=str(strat),

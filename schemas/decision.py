@@ -1,7 +1,7 @@
 """Structured decision record (Epic 1 lineage).
 
 Append-only, keyed by cycle_id. Gate names/units are versioned with the
-strategy engine (`defined_risk_risk_reversal_v0` + GATE_CATALOG_VERSION).
+strategy engine (`standard_risk_reversal_v1` + GATE_CATALOG_VERSION).
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 DECISION_SCHEMA_VERSION = "decision_v1"
-GATE_CATALOG_VERSION = "gates_v1"
+GATE_CATALOG_VERSION = "gates_v2"
 
 # Paper is the primary case. Records are written in every run mode anyway.
 TradingMode = Literal["paper", "live"]

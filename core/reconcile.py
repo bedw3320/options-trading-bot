@@ -1,7 +1,7 @@
 """Reconcile broker state (authoritative, LOOP principle 3) with the lineage store.
 
-Scope: option positions and orders on the strategy's underlying. Anything else in
-the account (e.g. the pre-existing 1 SPY share) is reported as out of scope.
+Scope: all option positions and working option orders vs the strategy's open
+snapshot. Stock leftovers (e.g. the Epic 0 1 SPY share) are out of scope.
 """
 
 from __future__ import annotations
@@ -23,7 +23,8 @@ def expected_option_positions(open_positions: list[dict[str, Any]]) -> dict[str,
 
 
 def reconcile(
-    broker: ExecutionBroker, lineage: Lineage, *, strategy: str, mode: str, underlying: str,
+    broker: ExecutionBroker, lineage: Lineage, *, strategy: str, mode: str,
+    underlying: str | None = None,
     cycle_id: str | None = None, account_id: str | None = None,
 ) -> dict[str, Any]:
     drift: list[str] = []
@@ -49,7 +50,7 @@ def reconcile(
     caught_up = 0
     for ex in broker.executions():
         exec_id, oid = ex.get("exec_id"), str(ex.get("order_id") or "")
-        if ex.get("symbol") not in (None, underlying):
+        if underlying and ex.get("symbol") not in (None, underlying):
             continue
         if exec_id and oid in known and exec_id not in seen:
             rec = persistable_fill(ex)

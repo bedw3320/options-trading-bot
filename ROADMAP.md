@@ -47,7 +47,8 @@ Baseline
 Current walking-slice status (Epics 0–4 as used in `core/cycle.py` and PRs #3/#5) lives in
 [`STATUS.md`](STATUS.md). Update that file in every merged PR. The numbered Epic 0–7
 sections below are the long-term plan. Walking-slice Epic 5 (two-way watchlist
-strategy) is in STATUS.md only — it is not this file's Epic 5 (controlled improvement).
+strategy) and Epic 6 (exit strategy) are in STATUS.md only — they are not this
+file's Epic 5 (controlled improvement) or Epic 6 (multi-agent desk).
 
 ---
 
@@ -334,5 +335,6 @@ issue bodies and apply the existing `enhancement` label.
 ## Immediate next step
 
 See [`STATUS.md`](STATUS.md) (update it in every merged PR). Next walking-slice work is
-Epic 4 (close-out / exits / reconcile / debrief). Do not begin multi-agent work until
-the paper lifecycle is complete.
+Epic 4 (close-out / reconcile / debrief; yellow-zone automated exits are deferred to
+walking-slice Epic 6 and must not block the v0 open path). Do not begin multi-agent
+work until the paper lifecycle is complete.

@@ -4,6 +4,8 @@ This repository is the entire trading runtime. Do not import, submodule, or shar
 
 This file is **harness law**, not strategy. Strategy YAML comes later.
 
+Product-in-force (structure and closes), locked 2026-11-11: [`STATUS.md`](STATUS.md) walking-slice Epic 6 and [`knowledge/ops/exit-strategy.md`](knowledge/ops/exit-strategy.md). Standard RR (short put + long call), no protective put, no defined max loss, no automated exits; paper DUT116016 equity/margin is the testing-period risk cap; closes are manual flatten only. `strategies/active/spy-defined-risk-rr.yaml` yellow-zone exits are as-built / superseded, not current product policy.
+
 ## First principles
 
 Stable epistemic and safety law. Do not edit this section without explicit user approval. The four constraints below implement principles 1–3 in the current runtime; they are not a competing list.
@@ -67,12 +69,13 @@ Cursor Cloud must not hold TWS passwords and must not place orders. IBKR’s pub
 - Confidence threshold (default 0.75) skips the trade
 - Append-only SQLite event log (`utils/state.py`)
 - `docker-compose.yml`: `ib-gateway` + `agent` (opt-in `bot` profile), Gateway healthcheck (bash /dev/tcp on the socat port) before the agent starts
+- Mini `com.otb.cycle` is paper **journal-only** (`ALLOW_TRADING=false`), not fixture `--dry-run`. Those ticks do not auto-close. Product-in-force close is `core.cli flatten`.
 
 ## Cycle (target)
 
 `dry` → research → `OrderIntent` → code risk → preview token → (human **or** armed autonomy) → place → fill log → stop.
 
-Constraints 1–2 are in code. Do not arm live: constraint 3 (autonomy latch) and remaining Epic 2 items (idempotency, cancel/flatten) are not. Paper with `--allow-trading` uses the tokenized runner path.
+Constraints 1–2 are in code. Idempotency keys and paper `core.cli flatten` exist. Do not arm live: constraint 3 (autonomy latch) and stale-quote reject are not. Paper with `--allow-trading` uses the tokenized runner path.
 
 ## Isolation
 

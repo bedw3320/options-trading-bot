@@ -1,6 +1,8 @@
-"""Thin deterministic entry signals for the defined-risk risk reversal.
+"""Thin deterministic entry signals for the as-built defined-risk RR YAML.
 
 Inputs: one MarketSnapshot (+ own rr25 history). No I/O, no clock reads.
+Defined-risk structure is superseded product intent (standard RR; see
+knowledge/ops/exit-strategy.md). Signal math here is unchanged.
 Convention: rr25 = IV(25d call) - IV(25d put); equities are usually negative.
 25-delta IVs (rr25, put/call IV ratio) are linearly interpolated in |delta|
 between the strikes that bracket 0.25; nearest listed strike if not bracketable.

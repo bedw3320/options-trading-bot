@@ -9,6 +9,9 @@ created: 2026-02-20
 
 Core concepts underpinning the zero-cost risk reversal strategy on high-skew equities.
 
+Vault research MOC, not live product policy. Product-in-force (2026-11-11):
+[`../ops/exit-strategy.md`](../ops/exit-strategy.md).
+
 ## Key Concepts
 
 - [[the skew risk premium is real and persistent with approximately half of implied skew representing compensatable risk premium]]

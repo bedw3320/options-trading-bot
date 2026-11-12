@@ -9,6 +9,10 @@ created: 2026-02-20
 
 Zero-cost risk reversal strategy: sell overpriced puts, finance OTM calls, harvest skew premium.
 
+Vault research MOC, not live product policy. Product-in-force (2026-11-11):
+[`../ops/exit-strategy.md`](../ops/exit-strategy.md). Defined-risk EM wings and
+21-DTE rolls linked below are claims, not current runner exits.
+
 ## Strategy Construction
 
 - [[zero-cost risk reversals sell overpriced puts to finance OTM calls in elevated-skew environments]]

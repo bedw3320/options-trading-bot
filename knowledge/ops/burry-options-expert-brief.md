@@ -1,5 +1,11 @@
 # Burry Study Brief — Options Risk Reversal WIP (options-trading-bot)
 
+**Dated 2026-09-11 research brief.** Numbers below are **VAULT** research, not
+product-in-force. Locked with Will 2026-11-11: standard RR (short put + long
+call), no protective put, no defined max loss, no automated 21-DTE / underlying
+/ dollar / take-profit exits, manual flatten only. See
+[`exit-strategy.md`](exit-strategy.md) and [`STATUS.md`](../../STATUS.md) Epic 6.
+
 **Audience:** Burry (paper-desk operator)  
 **Repo:** `/Users/aiagent/Documents/GitHub Repos/options-trading-bot` (Mac Mini) · `https://github.com/bedw3320/options-trading-bot`  
 **Primary source:** `knowledge/archive/research_v0_ Options Risk Reversal Strategy.md` (v1.0, Feb 2026, “Step 1 of 2”)  

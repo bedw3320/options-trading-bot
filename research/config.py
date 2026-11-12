@@ -2,8 +2,10 @@
 
 Liquidity numbers default to `strategies/active/spy-defined-risk-rr.yaml`
 `rules.structure` (OI >= 500, spread <= 10% of mid, 30-45 DTE, wing $20).
-This file does not edit that YAML. Overrides live in `research/config.yaml`
-and are PROPOSALS for Will until he says otherwise.
+That YAML is as-built defined-risk / superseded as product-in-force
+(knowledge/ops/exit-strategy.md). This file does not edit that YAML.
+Overrides live in `research/config.yaml` and are PROPOSALS for Will until
+he says otherwise.
 """
 
 from __future__ import annotations

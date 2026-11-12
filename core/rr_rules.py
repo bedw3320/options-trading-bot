@@ -1,8 +1,13 @@
-"""Deterministic construction and exit rules for the defined-risk risk reversal.
+"""Deterministic construction and exit rules for the as-built defined-risk RR.
 
 Structure (one expiry, 1 combo): SELL ~22d put, BUY wing put `wing_width` lower,
 BUY call sized so the combo is ~zero-cost. Max loss = (width + net debit) x 100.
 Pure functions of (snapshot, rules, position). No I/O.
+
+Superseded intent: product-in-force (locked 2026-11-11) is a standard RR
+(short put + long call), no protective put, no defined max loss, no automated
+exits — see knowledge/ops/exit-strategy.md. This module still implements the
+YAML yellow-zone evaluate_exit order until a later strategy PR.
 """
 
 from __future__ import annotations
@@ -150,7 +155,12 @@ def evaluate_exit(
     snapshot: MarketSnapshot,
     rules: DeterministicRules,
 ) -> tuple[str | None, float | None, list[str]]:
-    """Return (trigger, mark, reasons). trigger None => hold."""
+    """Return (trigger, mark, reasons). trigger None => hold.
+
+    As-built YAML order (21 DTE / underlying / -$1250 / +$1000). Superseded
+    product intent — see knowledge/ops/exit-strategy.md. Do not treat as
+    product-in-force; logic is unchanged until a later strategy PR.
+    """
     ex = rules.exits
     legs = position["legs"]
     expiry = legs[0]["expiry"]

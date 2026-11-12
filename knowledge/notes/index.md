@@ -9,6 +9,13 @@ created: 2026-02-20
 
 Entry point for all options trading research, strategy parameters, and execution knowledge.
 
+**Not product-in-force.** Vault notes are research claims (many from the Feb 2026
+RR archive). Live product policy (locked 2026-11-11) is
+[`../ops/exit-strategy.md`](../ops/exit-strategy.md) and
+[`../../STATUS.md`](../../STATUS.md) walking-slice Epic 6: standard RR, no
+protective put, no defined max loss, manual flatten only. 21-DTE rolls and
+defined-risk EM wings in notes below are vault claims, not current runner policy.
+
 ## Domain Maps
 
 - [[options-trading-overview]] — Core concepts, strategy types, market structure

@@ -1,3 +1,7 @@
+> Archived source (Feb 2026). Not product-in-force. Locked 2026-11-11 policy:
+> `knowledge/ops/exit-strategy.md` and `STATUS.md` Epic 6 (standard RR, no
+> protective put, no automated 21-DTE / dollar exits, manual flatten only).
+
 **TRADING BOT: STRATEGY RESEARCH**
 
 *Zero-Cost Risk Reversals on High-Skew EM and US Equities*

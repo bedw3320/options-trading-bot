@@ -4,6 +4,8 @@ This is **Options Trading Bot**, a multi-asset swing trading platform (stocks, o
 
 Harness law: `LOOP.md`. Isolation: this repo only — no sibling personal projects.
 
+Product-in-force (locked 2026-11-11): `STATUS.md` walking-slice Epic 6 and `knowledge/ops/exit-strategy.md`. Do not treat YAML 21-DTE / dollar / take-profit exits as current product policy.
+
 ### Architecture
 - **Strategies**: YAML files validated by Pydantic models. Conditions are descriptive strings, not code.
 - **Runner**: Loads strategy -> fetches data -> builds prompt -> runs PydanticAI agent -> (gated) executes orders

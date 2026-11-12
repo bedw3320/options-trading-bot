@@ -6,7 +6,9 @@ Paper first. Live only when you deliberately arm it.
 
 **Harness law:** [`LOOP.md`](LOOP.md) — first principles and execution boundaries; read before changing anything that can send an order.
 
-**Current status:** [`STATUS.md`](STATUS.md) — walking-slice epics 0–4 (update in every merged PR).
+**Current status:** [`STATUS.md`](STATUS.md) — walking-slice epics 0–6 (update in every merged PR).
+
+**Product-in-force (locked 2026-11-11):** standard risk reversal (short put + long call), no protective put, no defined max loss, no automated exits. Closes are manual flatten only. Paper **DUT116016** equity/margin is the testing-period risk cap. Deferred exits: [`knowledge/ops/exit-strategy.md`](knowledge/ops/exit-strategy.md) (walking-slice Epic 6). The file `strategies/active/spy-defined-risk-rr.yaml` still encodes the old defined-risk yellow-zone exits — **superseded intent**, left in place until a later strategy PR.
 
 **Delivery plan:** [`ROADMAP.md`](ROADMAP.md) — walking paper-trading slices through the options edge platform.
 
@@ -62,12 +64,17 @@ Without `--allow-trading`, the loop researches and journals. It does not send.
 
 ## Deterministic cycle (v0)
 
-`strategies/active/spy-defined-risk-rr.yaml` runs through `core/cycle.py` with no LLM in the decision path:
-reconcile → snapshot → signals → decision → guarded BAG order → fill → reconcile, all under one `cycle_id` in SQLite.
+`strategies/active/spy-defined-risk-rr.yaml` still runs through `core/cycle.py` with no LLM in the decision path
+(as-built: reconcile → snapshot → signals → decision → guarded BAG order → fill → reconcile, one `cycle_id`).
+That YAML is a **defined-risk** structure with yellow-zone `evaluate_exit` rules (21 DTE / underlying / −$1,250 / +$1,000).
+Those exits are **superseded product intent** — see [`knowledge/ops/exit-strategy.md`](knowledge/ops/exit-strategy.md).
+Product-in-force close is `core.cli flatten`. This is not a SPY-only product claim; it is the file the runner
+loads today. The watchlist is not wired.
 
 ```bash
 uv run python -m core.cli run --dry-run      # full cycle on synthetic fixtures, no IB
 uv run python -m core.cli explain last       # why it traded or abstained
+uv run python -m core.cli flatten --dry-run  # product-in-force close path (fixtures)
 ```
 
 See [`knowledge/ops/deterministic-cycle.md`](knowledge/ops/deterministic-cycle.md).
@@ -116,7 +123,8 @@ Copy `.env.example` to `.env`:
 - **Everything logged** — agent output, orders, `risk_blocked`
 - **Identity gate** — `managedAccounts` must match `IB_ACCOUNT_ID`; live-looking `U*` or port 4001 aborts. See [`knowledge/ops/paper-readiness.md`](knowledge/ops/paper-readiness.md).
 - **Guarded placement** — runner preview → single-use token → risk revalidate → place. Agent `create_order` / `close_position` refuse to send.
-- **Live is not armed** — remaining Epic 2 items (idempotency, cancel/flatten) and constraint 3 (autonomy latch) are not done. See `LOOP.md`.
+- **Live is not armed** — constraint 3 (autonomy latch) and stale-quote reject are not done. Idempotency keys and paper `flatten` exist. See `LOOP.md`.
+- **Product-in-force close** — `core.cli flatten` (GuardedBroker, paper identity, `--allow-trading` to send). YAML yellow-zone auto-exits are as-built / superseded ([`knowledge/ops/exit-strategy.md`](knowledge/ops/exit-strategy.md)).
 
 ## Commands
 
@@ -144,6 +152,7 @@ Copy `.env.example` to `.env`:
 ```
 LOOP.md                          # Harness constitution (read first)
 STATUS.md                        # Walking-slice epic status (update in every merged PR)
+knowledge/ops/exit-strategy.md   # Product-in-force closes (Epic 6, deferred)
 AGENTS.md                        # Cursor / agent entry
 main.py                          # Entry point
 core/                            # Agent, runner, strategy loader

@@ -49,7 +49,11 @@ class Falsifier(BaseModel):
 
 
 class NameExits(BaseModel):
-    """Per-name exit defaults. Numbers are proposals until Will edits them."""
+    """Per-name exit defaults. Numbers are proposals until Will edits them.
+
+    Copied from superseded SPY YAML yellow-zone exits. Product-in-force close
+    is manual flatten (knowledge/ops/exit-strategy.md). Not wired to the runner.
+    """
 
     model_config = ConfigDict(extra="ignore")
 
@@ -66,7 +70,9 @@ class WatchlistName(BaseModel):
 
     ticker: str = Field(min_length=1)
     direction: Direction = Field(
-        description="bullish = sell puts (defined-risk); bearish = sell calls (defined-risk)."
+        description="bullish = sell puts; bearish = sell calls. "
+                    "Defined-risk wings are superseded; product-in-force is standard RR "
+                    "(knowledge/ops/exit-strategy.md). Runner does not load this file."
     )
     status: Status
     theme: str | None = None

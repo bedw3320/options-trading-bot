@@ -8,6 +8,7 @@ Standalone Interactive Brokers trading runtime. Not part of any other personal r
 2. `CLAUDE.md` — file map, commands, how to run
 3. `.claude/rules/02-trading-safety.md` — live-trading gates
 4. `STATUS.md` — walking-slice epic status (update in every merged PR)
+5. `knowledge/ops/exit-strategy.md` — product-in-force closes (manual flatten; yellow-zone exits deferred to walking-slice Epic 6)
 
 Do not answer execution questions from memory. The loop constitution wins over any skill, command, or prior chat.
 
@@ -21,3 +22,4 @@ Do not import, submodule, copy secrets from, or write into any other personal pr
 - LLM proposes `OrderIntent`. Code places via `GuardedBroker` (preview → token → revalidate). Agent tools cannot one-hop. Do not add one-hop paths.
 - No strategy work in a harness session unless asked.
 - Update [`STATUS.md`](STATUS.md) in every PR that advances or closes a walking-slice epic.
+- Do not treat `strategies/active/spy-defined-risk-rr.yaml` yellow-zone exits as current product policy.

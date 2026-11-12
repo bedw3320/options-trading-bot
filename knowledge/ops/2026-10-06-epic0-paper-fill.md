@@ -8,4 +8,4 @@
 - Paper book: a pre-existing 1 SPY (avg 760.07, from an earlier session) was already held; it remains (not touched).
 - SQLite: `state/state.db` table `agent_events`, state_key `epic0-manual`, ids 1–9 (order_placed, order_result, fill, fill_time_correction, quotes_probe). Fill `time_et` in ids 3/6 is UTC mislabeled; id 7 holds corrected ET.
 - Quotes (marketDataType=1 and 3): SPY and SPY 20261023 778 C/P → bid/ask/last/Greeks all NaN. Error 10197 "No market data during competing live session"; historical 162 "Trading TWS session is connected from a different IP address". Option chain defs OK (33 expirations, 491 strikes, tradingClass SPY).
-- Blocker: the live user (U28048141) has an active session elsewhere (TWS/mobile/portal) which takes the shared market data. Next step: log the live session out during RTH, then rerun the quotes probe.
+- Blocker (contemporaneous 2026-10-06, not current STATUS “Next”): the live user (`U****8141`) has an active session elsewhere (TWS/mobile/portal) which takes the shared market data. Then-next step: log the live session out during RTH, then rerun the quotes probe.

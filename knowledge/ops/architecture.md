@@ -1,6 +1,9 @@
 # Options-trading-bot architecture
 
 Source of truth for planes, tools, and boundaries. Amended with Zishan 2026-09-12.
+Product-in-force (structure / closes) locked with Will 2026-11-11: see
+[`exit-strategy.md`](exit-strategy.md) and [`STATUS.md`](../../STATUS.md)
+walking-slice Epic 6. This diagram is harness planes, not the strategy YAML.
 
 ## Diagram
 
@@ -45,7 +48,7 @@ flowchart TB
 
   subgraph Venue["6 · Venue — IBKR"]
     PAP["Paper DUT116016"]
-    LIV["Live U28048141 — non-target"]
+    LIV["Live U****8141 — non-target"]
   end
 
   Cloud["Cursor Cloud — edits Source only"] -.-> Source
@@ -65,6 +68,9 @@ flowchart TB
   LIV -.->|abort if seen| G2
 ```
 
+Paper **DUT116016** is the testing-period risk cap (equity/margin). Mask any
+live account id as `U****8141`. Never copy TWS secrets or `.env`.
+
 ## Tool opinions (Zishan)
 
 | Tool | Verdict | Notes |
@@ -77,8 +83,24 @@ flowchart TB
 | PydanticAI | Keep, scope-lock | Decision → intents; not harness gates |
 | Strategy YAML | Keep | Cloud edits; Mini loads |
 
+## In force vs as-built (2026-11-11)
+
+- **In force:** standard RR (short put + long call), no protective put, no
+  defined max loss, no automated yellow-zone exits, manual flatten only.
+- **As-built:** `strategies/active/` is not empty — it holds
+  `spy-defined-risk-rr.yaml` (defined-risk + YAML `evaluate_exit`). Superseded
+  intent; left in place until a later strategy PR.
+- Watchlist (`strategies/watchlist.yaml`) exists for Epic 5 research intake.
+  The runner does not load it.
+
 ## Gaps not to draw as shipped
 
-- strategies/active empty
-- Epic 0 fill pending
-- Epic 2 remaining: idempotency, stale-quote reject, cancel/flatten, mock broker contract
+These are remaining harness gaps, not a Day-1 snapshot:
+
+- Epic 0 paper fill: **done** (2026-10-06, DUT116016). See
+  [`2026-10-06-epic0-paper-fill.md`](2026-10-06-epic0-paper-fill.md).
+- Identity + GuardedBroker + mock broker + idempotency + paper flatten: **done**.
+- Still open: stale-quote reject, constraint 3 autonomy latch, live arming.
+- Walking-slice Epic 4 Mini paper demo (reconcile / debrief / manual flatten)
+  is remaining evidence. Automated 21-DTE / −$1,250 / +$1,000 exits are
+  **not** that demo — they are deferred to Epic 6.

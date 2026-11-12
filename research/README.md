@@ -6,7 +6,15 @@ on new names. Paper only. The LLM proposes; code decides.
 
 The runner still does **not** read `strategies/watchlist.yaml` (Epic 5 — do not
 start it). This folder is observational: schema, CI lint, a liquidity screen,
-and a daily skew snapshot.
+and a daily skew snapshot. It does **not** mean the product universe is SPY-only;
+SPY is the as-built paper baseline file the cycle still loads.
+
+Product-in-force (locked 2026-11-11): standard RR, no protective put, no defined
+max loss, no automated exits, manual flatten only. See
+[`../knowledge/ops/exit-strategy.md`](../knowledge/ops/exit-strategy.md) and
+[`../STATUS.md`](../STATUS.md) Epic 6. Defined-risk wings and yellow-zone
+`exits` copied from `spy-defined-risk-rr.yaml` are **superseded proposals**, not
+live product policy.
 
 ## Steps (v0)
 
@@ -28,23 +36,26 @@ and a daily skew snapshot.
    blocks promotion (`evidence_blocks_promotion`). Only Will may set
    `approved_by: will` + `approved_on`.
 5. **Later (not this slice):** skew fit vs each name's own history; controls vs
-   SPY-only and vs random liquid names with mid±slippage fills; **12-week stop
-   rule** on the experiment.
+   the SPY baseline and vs random liquid names with mid±slippage fills; a
+   **12-week experiment stop** (research-cohort control — not the product
+   yellow-zone 21-DTE / −$1,250 / +$1,000 exits, which are deferred to Epic 6).
 
 ## Thresholds — PROPOSALS for Will
 
 Liquidity numbers are **not** re-stated in strategy YAML. The screen reads them
-from `strategies/active/spy-defined-risk-rr.yaml` `rules.structure`:
+from the as-built file `strategies/active/spy-defined-risk-rr.yaml`
+`rules.structure` (defined-risk YAML; superseded as product, still the
+threshold source until a later strategy PR):
 
 | Field | Current YAML | Note |
 |---|---|---|
 | `min_open_interest` | 500 | inherited |
 | `max_spread_pct_of_mid` | 10 | inherited |
 | DTE window | 30–45 (target 38) | inherited |
-| `wing_width` | $20 | SPY dollar width; applying it to single names is a proposal |
+| `wing_width` | $20 | SPY defined-risk dollar width; applying it to single names is a proposal. Product-in-force has no protective-put wing. |
 | `max_quote_age_seconds` | 60 | in `research/config.yaml` |
 | evidence stale after | 30 days | `EVIDENCE_STALE_AFTER_DAYS` |
-| exits `dte_close` | 21 | per-name `exits:` in the watchlist; copied from SPY YAML |
+| exits `dte_close` | 21 | per-name `exits:` in the watchlist; copied from superseded SPY YAML. **Not** product-in-force (Epic 6: manual flatten only). |
 
 Override in `research/config.yaml` only. Do not edit the strategy YAML from here.
 
@@ -111,16 +122,22 @@ Weekday 15:50 ET. Force: `bash deploy/skew-snapshot.sh --force`.
 
 ## Current watchlist (v0)
 
-- **SPY** — `active` / bullish / index baseline. Already the paper strategy.
-  `approved_by: will`. No issuer falsifier (TODO; do not invent).
+- **SPY** — `active` / bullish / index baseline. As-built paper YAML the cycle
+  still loads (`spy-defined-risk-rr.yaml`); not a claim that the product
+  universe is SPY-only. `approved_by: will`. No issuer falsifier (TODO; do not invent).
 - **CRWV** — `record_only` / bearish / theme `ai-neocloud-financing`. One of
   three candidate slots. Two slots empty until Will writes theses with sources.
 
 ## Deferred
 
-- Wiring the watchlist into `core/cycle.py` / the runner (Epic 5).
-- Per-name wing width, borrow/short-interest for call-rich names, 10y block.
+- Wiring the watchlist into `core/cycle.py` / the runner (Epic 5). Do not claim
+  the runner already trades this universe.
+- Per-name structure (product-in-force is standard RR, not a defined-risk wing),
+  borrow/short-interest for call-rich names, 10y block.
 - Auto event calendars.
 - Skew-percentile history per name (needs this snapshot job to accumulate).
-- Controls vs SPY-only and random liquid names; 12-week stop as code, not a comment.
+- Controls vs the SPY baseline and random liquid names; 12-week experiment stop
+  as code, not a comment (not product yellow-zone exits).
 - Live IBKR data (still CBOE delayed on the Mini until the share is unlocked).
+- Automated exits / assignment handlers — walking-slice Epic 6
+  ([`knowledge/ops/exit-strategy.md`](../knowledge/ops/exit-strategy.md)).

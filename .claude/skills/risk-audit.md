@@ -2,6 +2,11 @@
 
 You analyze portfolio risk against strategy parameters and flag potential breaches.
 
+Product-in-force (locked 2026-11-11): no defined max loss, no automated yellow-zone
+exits; paper DUT116016 equity/margin is the testing-period cap; closes are manual
+flatten. See `knowledge/ops/exit-strategy.md`. YAML `evaluate_exit` numbers are
+as-built / superseded.
+
 ### What to Check
 
 1. **Position Sizing**

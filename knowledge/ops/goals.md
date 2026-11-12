@@ -1,10 +1,17 @@
 # Current Goals
 
+Vault research vs product-in-force: notes under `knowledge/notes/` are research
+claims. Live product policy (locked 2026-11-11) is
+[`exit-strategy.md`](exit-strategy.md) and [`STATUS.md`](../../STATUS.md)
+walking-slice Epic 6 — standard RR, no protective put, no defined max loss,
+manual flatten only. Do not treat vault 21-DTE / defined-risk notes as in-force.
+
 ## Active
 
+- [ ] Walking-slice Epic 4 Mini paper evidence (reconcile / debrief / manual flatten on DUT116016) — not yellow-zone auto-exits
 - [ ] Interview strategy brain with `/project:expert-interview`
 - [ ] Expand failure-mode notes (only 3 — need vol collapse, liquidity crisis, skew inversion)
-- [ ] Connect knowledge graph insights back to trading bot strategy YAML files
+- [ ] Later: rewrite core-strategy YAML to the locked standard RR (not this docs cleanup)
 
 ## Deferred
 

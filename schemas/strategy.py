@@ -229,8 +229,10 @@ class DeterministicExitRules(BaseModel):
         default=3.0,
         ge=0.0,
         le=20.0,
-        description="Preferred SPY stop: this percent below the short put. "
-                    "Floored at long put + 25% of the wing so the stop stays above the protective put.",
+        description="As-built SPY stop: this percent below the short put. "
+                    "Floored at long put + 25% of the wing so the stop stays above the protective put. "
+                    "Superseded product intent (no protective put / no automated exits); "
+                    "see knowledge/ops/exit-strategy.md.",
     )
     take_profit_usd: float = Field(default=1000.0, gt=0.0)
     stop_loss_usd: float = Field(default=1250.0, gt=0.0)

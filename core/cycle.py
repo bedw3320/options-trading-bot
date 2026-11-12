@@ -3,6 +3,10 @@
 reconcile -> mark-to-market -> signals -> decision -> intent -> guarded order ->
 fill -> debrief -> reconcile -> stop. Every artifact is written under one cycle_id.
 Abstention is a successful outcome. Data problems abstain; they never guess.
+
+As-built YAML evaluate_exit still runs (defined-risk yellow zone). That is
+superseded product intent; product-in-force close is manual flatten. See
+knowledge/ops/exit-strategy.md. Do not change this cycle's logic in a docs PR.
 """
 
 from __future__ import annotations
@@ -162,7 +166,8 @@ def run_cycle(
     account_id: str | None = None
     try:
         # 1. Kill switch (latched until `rearm`): blocks new entries only. Risk-reducing
-        #    exits of existing strategy positions (exit rules or `flatten`) still run,
+        #    closes of existing strategy positions (as-built YAML evaluate_exit, superseded
+        #    — see knowledge/ops/exit-strategy.md — or product-in-force `flatten`) still run,
         #    through the same identity gate, reconcile and GuardedBroker path.
         kill = lineage.kill_state(name, mode)
 

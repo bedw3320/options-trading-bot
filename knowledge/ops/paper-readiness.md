@@ -2,6 +2,11 @@
 
 Harness only. No strategy YAML.
 
+Paper account in force for tests: **DUT116016** (Gateway **4002**). Product-in-force
+close is `core.cli flatten` (still through GuardedBroker + this identity gate).
+YAML yellow-zone auto-exits are superseded intent:
+[`exit-strategy.md`](exit-strategy.md). Mask live account ids as `U****8141`.
+
 ## Paper readiness (no orders)
 
 On the Mini, with Gateway up and `.env` set (`TRADING_MODE=paper`, `IB_ACCOUNT_ID=DU…`):
@@ -33,3 +38,5 @@ agent → OrderIntent (alias TradeIntent)
 - Agent `create_order` / `close_position` tools refuse to send. Runner-only placement: `core/guarded_broker.py`.
 - Identity: `core/identity.py::assert_paper_identity` before every cycle and again at preview/confirm.
 - Live is not armed. Do not set `TRADING_MODE=live`.
+- Flatten uses this same gated path. Without `--allow-trading` it journals
+  `proposed_not_sent`.

@@ -17,6 +17,7 @@ Every session follows three phases:
 2. Check `ops/tasks.md` and `ops/queue/` for pending work
 3. Scan `ops/observations/` and `ops/tensions/` for accumulated signals
 4. Review `ops/reminders.md` for time-bound items
+5. Product-in-force vs vault research: `STATUS.md` + `ops/exit-strategy.md` (locked 2026-11-11). Notes under `notes/` are claims, not live policy. Defined-risk wings and 21-DTE rolls in the vault are not product-in-force.
 
 ### Work
 Execute the session's purpose. During work:

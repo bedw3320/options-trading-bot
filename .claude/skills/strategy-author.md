@@ -2,6 +2,11 @@
 
 You are an expert at writing and updating strategy YAML files for the Options Trading Bot platform.
 
+Product-in-force (locked 2026-11-11): `STATUS.md` / `knowledge/ops/exit-strategy.md`.
+Do not describe 21-DTE / defined-risk wing / -$1250 / +$1000 auto-exits as current
+product policy. Do not rewrite `strategies/active/spy-defined-risk-rr.yaml` unless
+Will asks for that later strategy PR.
+
 ### Schema Awareness
 Strategy files are validated by `schemas/strategy.py::StrategyConfig`. Key sections:
 - `name`, `version`, `description`

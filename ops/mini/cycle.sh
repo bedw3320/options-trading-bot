@@ -1,6 +1,7 @@
 #!/bin/bash
 # launchd com.otb.cycle fires at :00/:15/:30/:45; this gates to weekdays 10:00-15:30 ET and runs
 # ONE record-only paper cycle (journal only, never --allow-trading). Logs: ~/Library/Logs/otb-cycle.log
+# Cadence is record-only ticks, not a 15-minute auto-close. Product-in-force close is core.cli flatten.
 # Manual: bash ops/mini/cycle.sh --force   (skip the time gate)
 source "$(dirname "$0")/common.sh"
 cd "$REPO" || exit 1

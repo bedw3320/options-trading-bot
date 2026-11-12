@@ -55,6 +55,9 @@ place until a later PR changes the core strategy.
 
 As-built cycle behavior is still described in
 [`deterministic-cycle.md`](deterministic-cycle.md).
+If another doc still presents 21-DTE / underlying / dollar / take-profit as
+current product policy, it is stale — this file and
+[`STATUS.md`](../../STATUS.md) Epic 6 win.
 
 ## Decision-database durability (non-negotiable)
 

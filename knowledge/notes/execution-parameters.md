@@ -9,6 +9,11 @@ created: 2026-02-20
 
 Quantitative parameters governing risk reversal trade construction and management.
 
+Vault research MOC, not live product policy. Product-in-force closes are manual
+flatten only ([`../ops/exit-strategy.md`](../ops/exit-strategy.md)). The 21-DTE
+roll and put-strike stops linked below are vault claims, not current runner
+exits.
+
 ## Position Sizing
 
 - [[US equity risk reversal position size is 3-5 percent of portfolio notional]]

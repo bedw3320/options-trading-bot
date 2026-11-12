@@ -28,7 +28,9 @@ Manual prerequisites (can't be scripted safely):
 
 ## Deterministic strategy cycle
 
-From `~/options-trading-bot` on the Mini (see `knowledge/ops/deterministic-cycle.md`):
+From `~/options-trading-bot` on the Mini (see `knowledge/ops/deterministic-cycle.md`).
+Product-in-force close is `core.cli flatten`, not a 15-minute auto-close; YAML
+yellow-zone exits are superseded (`knowledge/ops/exit-strategy.md`).
 
     git pull && uv sync
     uv run python -m core.cli run --dry-run && uv run python -m core.cli explain last   # no IB
@@ -39,12 +41,15 @@ Not scheduled by launchd yet; until IB option data works every paper cycle absta
 ## Record-only cycle (`com.otb.cycle`)
 
 `install.sh` renders `com.otb.cycle.plist.template` into `~/Library/LaunchAgents`. launchd fires
-at :00/:15/:30/:45; `cycle.sh` exits unless it is a weekday 10:00–15:30 America/New_York, then runs
-one `uv run python -m core.cli run` with `TRADING_MODE=paper ALLOW_TRADING=false` (journal only,
-never `--allow-trading`). Output: `~/Library/Logs/otb-cycle.log`. The last cycle summary goes to
+at :00/:15/:30/:45 so a tick is available during RTH; `cycle.sh` exits unless it is a weekday
+10:00–15:30 America/New_York, then runs one `uv run python -m core.cli run` with
+`TRADING_MODE=paper ALLOW_TRADING=false` (journal only, never `--allow-trading`).
+That cadence is **record-only cycle ticks**, not a product auto-close schedule and not
+a 15-minute exit policy. Output: `~/Library/Logs/otb-cycle.log`. The last cycle summary goes to
 `~/Library/Application Support/otb/last_cycle.json` and into the heartbeat as `last_cycle`
 (`cycle_id`, `decision`, `reason`). Force one now: `bash ops/mini/cycle.sh --force`; inspect:
-`uv run python -m core.cli explain last`.
+`uv run python -m core.cli explain last`. Flatten (product-in-force close) is a separate
+command and still needs `--allow-trading` to send.
 
 Quotes/Greeks source: `MARKET_DATA_SOURCE` in `.env` (`ib` default, `alpaca` with
 `ALPACA_API_KEY_ID` / `ALPACA_API_SECRET_KEY`, or `cboe` for unofficial ~15-min delayed

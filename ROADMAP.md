@@ -44,11 +44,17 @@ Baseline
 
 ## Epic status
 
-Current walking-slice status (Epics 0–4 as used in `core/cycle.py` and PRs #3/#5) lives in
-[`STATUS.md`](STATUS.md). Update that file in every merged PR. The numbered Epic 0–7
-sections below are the long-term plan. Walking-slice Epic 5 (two-way watchlist
-strategy) and Epic 6 (exit strategy) are in STATUS.md only — they are not this
-file's Epic 5 (controlled improvement) or Epic 6 (multi-agent desk).
+Current walking-slice status (Epics 0–6 as used in `core/cycle.py` and PRs #3/#5/#18)
+lives in [`STATUS.md`](STATUS.md). Update that file in every merged PR. The numbered
+Epic 0–7 sections below are the long-term plan. Walking-slice Epic 5 (two-way
+watchlist strategy) and Epic 6 (exit strategy) are in STATUS.md only — they are
+not this file's Epic 5 (controlled improvement) or Epic 6 (multi-agent desk).
+
+Product-in-force (locked 2026-11-11): standard RR, no protective put, no defined
+max loss, no automated yellow-zone exits, manual flatten only. Details:
+[`knowledge/ops/exit-strategy.md`](knowledge/ops/exit-strategy.md). Do not read
+the checkboxes below as saying 21-DTE / −$1,250 / +$1,000 are still the intended
+product.
 
 ---
 
@@ -58,13 +64,13 @@ file's Epic 5 (controlled improvement) or Epic 6 (multi-agent desk).
 
 ### Scope
 
-- [ ] Run the full test suite and record/fix the baseline
-- [ ] Start IB Gateway against the paper account
-- [ ] Verify the connected account identity and paper status
-- [ ] Capture account and position snapshots
-- [ ] Send one tiny, predetermined paper order
-- [ ] Reconcile the fill into SQLite
-- [ ] Document the reproducible Mini startup command
+- [x] Run the full test suite and record/fix the baseline
+- [x] Start IB Gateway against the paper account
+- [x] Verify the connected account identity and paper status
+- [x] Capture account and position snapshots
+- [x] Send one tiny, predetermined paper order
+- [x] Reconcile the fill into SQLite
+- [x] Document the reproducible Mini startup command
 
 ### Acceptance criteria
 
@@ -126,7 +132,7 @@ bypassing risk.
 
 ### Scope
 
-- [ ] Remove `create_order` and `close_position` tools from reasoning agents (refuse-only stubs; they cannot place)
+- [x] Remove place capability from `create_order` / `close_position` (refuse-only stubs remain; they cannot place)
 - [x] Introduce one `GuardedBroker` execution boundary
 - [x] Add a mock broker with the same contract as IBKR
 - [x] Implement preview → single-use token → revalidate → place
@@ -134,7 +140,8 @@ bypassing risk.
 - [x] Add idempotency keys and duplicate-order prevention
 - [ ] Reject stale quotes and expired previews (expired tokens: yes; stale quotes: no)
 - [x] Reconcile open orders, fills, and positions
-- [ ] Add cancel and flatten controls
+- [x] Paper flatten (`core.cli flatten` via GuardedBroker) and cancel-unfilled after `fill_wait_seconds`
+- [ ] Standalone cancel-all / cancel-by-id CLI (not required for the v0 open path)
 
 ### Acceptance criteria
 
@@ -335,6 +342,8 @@ issue bodies and apply the existing `enhancement` label.
 ## Immediate next step
 
 See [`STATUS.md`](STATUS.md) (update it in every merged PR). Next walking-slice work is
-Epic 4 (close-out / reconcile / debrief; yellow-zone automated exits are deferred to
-walking-slice Epic 6 and must not block the v0 open path). Do not begin multi-agent
-work until the paper lifecycle is complete.
+Epic 4 Mini paper evidence: reconcile / debrief / manual flatten on DUT116016.
+Automated yellow-zone exits (21-DTE, underlying, −$1,250, +$1,000) are **not**
+the intended product; they are deferred to walking-slice Epic 6 and must not
+block the v0 open path or jump remaining Epic 4 evidence. Do not begin
+multi-agent work (this file's Epic 6) until the paper lifecycle is complete.

@@ -12,8 +12,9 @@
     uv run python -m core.cli reconcile                     # paper: IB vs SQLite, no orders
     uv run python -m core.cli debrief last                  # last closed-trade debrief
     uv run python -m core.cli kill --reason "manual"        # latch (blocks entries); `rearm` to clear
-    uv run python -m core.cli flatten --allow-trading       # paper: close the open strategy position now
+    uv run python -m core.cli flatten --allow-trading       # paper: product-in-force close (GuardedBroker)
     uv run python -m core.cli flatten --dry-run             # same against fixtures + SimBroker
+    # YAML yellow-zone auto-exits are as-built / superseded: knowledge/ops/exit-strategy.md
 """
 
 from __future__ import annotations

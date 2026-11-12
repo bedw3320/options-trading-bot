@@ -1,9 +1,15 @@
-# Shared watchlist for the two-way defined-risk skew strategy.
+# Shared watchlist for the two-way skew strategy (research intake).
 #
 # Not a StrategyConfig. The runner and core/cycle.py do not load this file
 # (Epic 5 — do not start wiring it). Will, the partner, and the operator
 # maintain it together. A name may trade only when a written human thesis
-# agrees with the rich side of that name's skew, and only as defined risk.
+# agrees with the rich side of that name's skew.
+#
+# Product-in-force (locked 2026-11-11): standard RR (short put + long call),
+# no protective put, no defined max loss, no automated exits, manual flatten
+# only. See knowledge/ops/exit-strategy.md and STATUS.md Epic 6.
+# Defined-risk wings in theses / exits below are superseded / historical.
+# Do not treat 21-DTE / -$1250 / +$1000 as current product policy.
 #
 # v0 shrunk plan (Will): one theme, three record_only candidates. SPY is the
 # paper baseline (active), not a candidate. CI enforces the cap.
@@ -15,8 +21,9 @@
 # Schema (one object per name under `names:`), validated by schemas/watchlist.py:
 #   ticker:              str
 #   direction:           bullish | bearish
-#                          bullish = sell puts (defined-risk)
-#                          bearish = sell calls (defined-risk)
+#                          bullish = sell puts (product-in-force: standard RR;
+#                            defined-risk put wing is superseded)
+#                          bearish = sell calls (same: no protective wing)
 #                          (`allowed_direction` still accepted as an alias)
 #   status:              record_only | active | demoted
 #   theme:               str — v0: one theme across record_only names
@@ -28,7 +35,9 @@
 #   events_to_avoid:     list[str]
 #   cluster:             str
 #   exits:               {profit_take, stop, dte_close (~21), close_before_blackout}
-#                          NUMBERS ARE PROPOSALS FOR WILL unless noted
+#                          NUMBERS ARE PROPOSALS FOR WILL unless noted.
+#                          Copied from superseded SPY YAML yellow-zone exits.
+#                          Product-in-force close is manual flatten (Epic 6).
 #   narrative:           free-form; ignored by the runner
 #   forecast_horizon / probability / registered_at:
 #                          pre-registration for record_only (thesis before outcomes)
@@ -44,6 +53,8 @@ names:
     status: active
     theme: index-baseline
     cluster: index
+    # Thesis text below is the historical paper-baseline wording (defined-risk
+    # YAML still loaded). Product-in-force is standard RR, no protective put.
     thesis: >
       When SPY put skew is rich, sell a defined-risk put (short put + long put
       wing) and use the credit toward an OTM call. Existing paper strategy:
@@ -57,7 +68,8 @@ names:
       refinancing calendar.
     events_to_avoid:
       - "FOMC decision days (see strategies/active/spy-defined-risk-rr.yaml rules.events)"
-    # PROPOSAL for Will: copied from strategies/active/spy-defined-risk-rr.yaml.
+    # PROPOSAL for Will: copied from superseded spy-defined-risk-rr.yaml
+    # yellow-zone exits. Not product-in-force (Epic 6: manual flatten only).
     exits:
       profit_take: 1000
       stop: 1250
@@ -98,8 +110,9 @@ names:
       - "earnings: Q3 2026 results Tue 2026-11-10 after close (5 PM ET); source https://investors.coreweave.com/news/news-details/2026/CoreWeave-Announces-Date-of-Third-Quarter-2026-Financial-Results-and-Conference-Call/default.aspx"
       - "lockups: TBD"
       - "secondaries/converts: TBD"
-    # PROPOSAL for Will: same dollar exits as the SPY YAML until a name-specific
-    # cap is set. Do not treat as approved sizing.
+    # PROPOSAL for Will: same dollar exits as the superseded SPY YAML until a
+    # name-specific cap is set. Do not treat as approved sizing or as
+    # product-in-force (Epic 6: manual flatten only).
     exits:
       profit_take: 1000
       stop: 1250
